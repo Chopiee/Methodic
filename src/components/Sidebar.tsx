@@ -153,9 +153,6 @@ export function Sidebar({ activeItem, onSelectItem }: SidebarProps) {
 
       {/* Bottom Group */}
       <div className="flex flex-col gap-[2px] mt-8 pb-4 overflow-hidden">
-        <NavItem icon={LifeBuoy} label="Help center" active={activeItem === 'Help center'} collapsed={collapsed} onClick={() => onSelectItem('Help center')} />
-        <NavItem icon={Ticket} label="Tutorial" active={activeItem === 'Tutorial'} collapsed={collapsed} onClick={() => onSelectItem('Tutorial')} />
-        <NavItem icon={Receipt} label="Billings" active={activeItem === 'Billings'} collapsed={collapsed} onClick={() => onSelectItem('Billings')} />
         <NavItem icon={SettingsIcon} label="Settings" active={activeItem === 'Settings'} collapsed={collapsed} onClick={() => onSelectItem('Settings')} />
       </div>
     </div>

@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../lib/cropImage';
+import { Billings } from './Billings';
 import { 
   X, 
   Search, 
@@ -854,8 +855,15 @@ export function Settings({ onClose }: { onClose?: () => void }) {
             </div>
           )}
 
-          {/* OTHER TABS PLACEHOLDERS (SESSIONS, PLANS, BILLING, SECURITY, SUPPORT, MIGRATE) */}
-          {['call_intelligence', 'sessions', 'plans', 'billing', 'security', 'support', 'migrate_crm'].includes(activeTab) && (
+          {/* BILLINGS TAB */}
+          {activeTab === 'billing' && (
+            <div className="animate-in fade-in duration-200">
+              <Billings />
+            </div>
+          )}
+
+          {/* OTHER TABS PLACEHOLDERS (SESSIONS, PLANS, SECURITY, SUPPORT, MIGRATE) */}
+          {['call_intelligence', 'sessions', 'plans', 'security', 'support', 'migrate_crm'].includes(activeTab) && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div>
                 <h2 className="text-xl font-semibold text-white capitalize">{activeTab.replace('_', ' ')}</h2>

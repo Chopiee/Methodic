@@ -5,7 +5,6 @@
 
 import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { Billings } from './components/Billings';
 import { Home } from './components/Home';
 import { Inbox } from './components/Inbox';
 import { Purchase } from './components/Purchase';
@@ -105,8 +104,6 @@ export default function App() {
     switch (tab) {
       case 'Dashboard':
         return ['Home', 'Dashboard'];
-      case 'Billings':
-        return ['Home', 'Finance', 'Billings'];
       case 'Inbox':
         return ['Home', 'Communications', 'Inbox'];
       case 'Smart Planning':
@@ -203,9 +200,7 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto flex flex-col">
           {/* Main page content */}
-          {displayTab === 'Billings' ? (
-            <Billings />
-          ) : displayTab === 'Dashboard' ? (
+          {displayTab === 'Dashboard' ? (
             <Home />
           ) : displayTab === 'Inbox' ? (
             <Inbox searchQuery={searchQuery} />
