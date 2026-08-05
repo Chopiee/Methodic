@@ -1,0 +1,263 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+}
+
+body, html, #root {
+  font-family: 'Inter', "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5; /* 150% Body Line Height */
+  letter-spacing: 0em; /* 0% Body Letter Spacing */
+}
+
+h1, h2, h3, h4, h5, h6, .heading {
+  line-height: 1.2; /* 120% Heading Line Height */
+  letter-spacing: -0.01em; /* -1% Letter Spacing */
+}
+
+@layer utilities {
+  .hide-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide number input spin buttons (up/down arrows) */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  /* ========================================= */
+  /* TYPOGRAPHY GUIDELINE UTILITIES            */
+  /* ========================================= */
+
+  /* Headings */
+  .display-large { font-size: 40px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+  .display-medium { font-size: 32px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+  .heading-1 { font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+  .heading-2 { font-size: 24px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+  .heading-3 { font-size: 20px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+  .heading-4 { font-size: 18px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+  .heading-5 { font-size: 16px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+  .heading-6 { font-size: 14px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+
+  /* Body Text */
+  .body-large { font-size: 16px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+  .body-medium { font-size: 14px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+  .body-small { font-size: 13px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+  .caption-text { font-size: 12px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+  .tiny-text { font-size: 11px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+
+  /* Buttons */
+  .btn-large { font-size: 16px; font-weight: 600; }
+  .btn-medium { font-size: 14px; font-weight: 600; }
+  .btn-small { font-size: 13px; font-weight: 600; }
+
+  /* Form */
+  .form-label { font-size: 14px; font-weight: 500; }
+  .form-input { font-size: 14px; font-weight: 400; }
+  .form-placeholder { font-size: 14px; font-weight: 400; color: #6B7280; }
+  .form-helper { font-size: 12px; font-weight: 400; }
+  .form-error { font-size: 12px; font-weight: 500; }
+
+  /* Table */
+  .table-header { font-size: 13px; font-weight: 600; }
+  .table-content { font-size: 13px; font-weight: 400; }
+  .table-footer { font-size: 12px; font-weight: 500; }
+
+  /* Sidebar */
+  .sidebar-menu { font-size: 14px; font-weight: 500; }
+  .sidebar-menu-active { font-size: 14px; font-weight: 600; }
+  .sidebar-section-title { font-size: 12px; font-weight: 600; }
+
+  /* Card */
+  .card-title { font-size: 18px; font-weight: 600; }
+  .card-subtitle { font-size: 13px; font-weight: 400; }
+  .card-value { font-size: 28px; font-weight: 700; }
+  .card-description { font-size: 12px; font-weight: 400; }
+
+  /* Modal */
+  .modal-title { font-size: 20px; font-weight: 600; }
+  .modal-content { font-size: 14px; font-weight: 400; }
+  .modal-footer { font-size: 13px; font-weight: 500; }
+
+  /* Badge */
+  .badge-text { font-size: 12px; font-weight: 600; }
+
+  /* Tooltip */
+  .tooltip-text { font-size: 12px; font-weight: 400; }
+
+  /* Notification */
+  .notification-title { font-size: 14px; font-weight: 600; }
+  .notification-body { font-size: 13px; font-weight: 400; }
+}
+
+/* Light Theme Styling */
+.light-theme {
+  background-color: #F8FAFC !important; /* slate-50 background for main screen */
+  color: #0F172A !important;
+}
+
+/* Base backgrounds & text colors */
+.light-theme,
+.light-theme main,
+.light-theme select,
+.light-theme input,
+.light-theme textarea {
+  color: #0F172A !important;
+}
+
+/* Background overrides */
+.light-theme .bg-\[\#050505\],
+.light-theme .bg-\[\#070809\],
+.light-theme .bg-\[\#090909\],
+.light-theme .bg-\[\#0A0A0A\],
+.light-theme .bg-\[\#0A0B0D\],
+.light-theme .bg-\[\#0C0D0E\],
+.light-theme .bg-\[\#0E0F10\],
+.light-theme .bg-\[\#0E0F11\],
+.light-theme .bg-\[\#0F1012\],
+.light-theme .bg-\[\#111213\],
+.light-theme .bg-\[\#131313\] {
+  background-color: #F8FAFC !important;
+}
+
+.light-theme .bg-\[\#141517\],
+.light-theme .bg-\[\#1A1A1A\],
+.light-theme .bg-\[\#1A1B1D\],
+.light-theme .bg-\[\#1A1C1F\],
+.light-theme .bg-\[\#1C1C1C\],
+.light-theme .bg-\[\#1C1C1E\],
+.light-theme .bg-\[\#1C1C1F\],
+.light-theme .bg-\[\#1C1D1F\],
+.light-theme .bg-\[\#1C1D20\],
+.light-theme .bg-\[\#1C1D21\],
+.light-theme .bg-\[\#1E1E20\],
+.light-theme .bg-\[\#1E1F21\],
+.light-theme .bg-\[\#202226\],
+.light-theme .bg-\[\#222325\] {
+  background-color: #FFFFFF !important;
+}
+
+/* Light gray panels/buttons */
+.light-theme .bg-\[\#0E0E0E\],
+.light-theme .bg-\[\#2A2A2A\],
+.light-theme .bg-\[\#2A2A2E\],
+.light-theme .bg-\[\#2A2B2A\],
+.light-theme .bg-\[\#2C2E30\],
+.light-theme .bg-\[\#2E2E2E\],
+.light-theme .bg-\[\#3B3B3B\],
+.light-theme .bg-\[\#505050\],
+.light-theme .bg-\[\#0A0A0A\]\/45 {
+  background-color: #F1F5F9 !important;
+}
+
+/* Active Nav Link in Light Mode */
+.light-theme .bg-\[\#2A2B2A\] {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Hover States */
+.light-theme .hover\:bg-\[\#1A1A1A\]:hover,
+.light-theme .hover\:bg-\[\#1C1C1E\]:hover,
+.light-theme .hover\:bg-\[\#1E1E20\]:hover,
+.light-theme .hover\:bg-\[\#2A2B2A\]:hover {
+  background-color: #E2E8F0 !important;
+}
+
+.light-theme .hover\:text-white:hover {
+  color: #0F172A !important;
+}
+
+/* Specific text color classes */
+.light-theme .text-white {
+  color: #0F172A !important;
+}
+
+.light-theme .text-\[\#D5D5D5\] {
+  color: #334155 !important;
+}
+
+.light-theme .text-\[\#E5E5E5\] {
+  color: #1E293B !important;
+}
+
+.light-theme .text-\[\#909090\] {
+  color: #64748B !important;
+}
+
+.light-theme .text-\[\#A0A0A0\] {
+  color: #475569 !important;
+}
+
+/* Border color overrides */
+.light-theme .border-\[\#1C1C1C\],
+.light-theme .border-\[\#1C1C1E\],
+.light-theme .border-\[\#1C1C1F\],
+.light-theme .border-\[\#2A2A2A\],
+.light-theme .border-\[\#2A2A2E\],
+.light-theme .border-\[\#2A2B2A\],
+.light-theme .border-\[\#2C2E30\],
+.light-theme .border-\[\#2E2E2E\],
+.light-theme .border-\[\#3A3A3A\],
+.light-theme .border-\[\#3B3B3B\] {
+  border-color: #E2E8F0 !important;
+}
+
+/* Border opacity modifiers */
+.light-theme .border-\[\#2A2A2A\]\/40 {
+  border-color: rgba(226, 232, 240, 0.4) !important;
+}
+.light-theme .border-\[\#1C1C1C\]\/40 {
+  border-color: rgba(226, 232, 240, 0.4) !important;
+}
+
+/* Input Fields overrides */
+.light-theme input,
+.light-theme textarea,
+.light-theme select {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+.light-theme input:focus,
+.light-theme textarea:focus,
+.light-theme select:focus {
+  border-color: #E87A5D !important;
+  outline: none !important;
+}
+
+/* Dynamic Placeholder */
+.light-theme ::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* Table header & body items */
+.light-theme thead {
+  background-color: #F8FAFC !important;
+}
+.light-theme tr {
+  border-bottom-color: #E2E8F0 !important;
+}
+.light-theme td {
+  color: #334155 !important;
+}
+
+/* Recharts Tooltips in Light mode */
+.light-theme .recharts-default-tooltip {
+  background-color: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  color: #0F172A !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+}

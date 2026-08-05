@@ -1,0 +1,201 @@
+                  <span>Add Row</span>
+                </button>
+              </div>
+            </div>
+
+            {/* CARD 3: Catatan & Lampiran (Notes & Attachments workspace) */}
+            <div className="bg-[#141517] border border-[#2A2A2A] rounded-xl p-6 shadow-xl space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Notes Column */}
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-[#808080] uppercase tracking-wider block">Message / Transaction Notes</span>
+                  <textarea 
+                    value={messageNotes}
+                    onChange={(e) => setMessageNotes(e.target.value)}
+                    placeholder="Write a message to the client, payment terms detail, or internal transaction notes here..."
+                    rows={5}
+                    className="w-full bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#E87A5D] transition-colors resize-none h-[120px]"
+                  />
+                </div>
+
+                {/* Attachments Upload Column */}
+                <div className="space-y-3">
+                  <span className="text-[11px] font-bold text-[#808080] uppercase tracking-wider block">Attachment / File Upload</span>
+                  <label className="border border-dashed border-[#2A2A2A] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#1E1E20]/20 hover:border-[#E87A5D]/40 transition-all cursor-pointer group text-center h-[120px] bg-[#0A0A0A]/30">
+                    <input 
+                      type="file" 
+                      multiple 
+                      className="sr-only"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          const list = Array.from(e.target.files).map((f: any) => ({
+                            name: f.name,
+                            size: (f.size / 1024).toFixed(1) + ' KB'
+                          }));
+                          setUploadedFiles([...uploadedFiles, ...list]);
+                        }
+                      }}
+                    />
+                    <Upload size={18} className="text-[#606060] group-hover:text-[#E87A5D] transition-colors mb-1.5" />
+                    <span className="text-[11px] font-semibold text-[#D5D5D5]">Drag file / Click to upload</span>
+                    <span className="text-[9px] text-[#555] mt-0.5">Max. 10MB per file</span>
+                  </label>
+
+                  {/* List of uploaded files */}
+                  {uploadedFiles.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[9px] font-bold text-[#808080] uppercase block">File List ({uploadedFiles.length})</span>
+                      <div className="max-h-[100px] overflow-y-auto space-y-1">
+                        {uploadedFiles.map((file: any, idx) => (
+                          <div key={idx} className="flex items-center justify-between bg-[#0A0A0A]/80 px-3 py-1.5 rounded-lg border border-[#2A2A2A] text-[11px]">
+                            <span className="truncate max-w-[180px] text-[#D5D5D5] flex items-center gap-1.5 font-sans">
+                              <Paperclip size={11} className="text-[#E87A5D]" />
+                              {file.name}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-mono text-[#606060]">{file.size}</span>
+                              <button 
+                                type="button"
+                                onClick={() => setUploadedFiles(uploadedFiles.filter((_, i) => i !== idx))}
+                                className="text-[#606060] hover:text-[#E87A5D] transition-colors"
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: Sticky Sidebar Summary & Actions (4 cols) */}
+          <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
+            
+            {/* CARD 4: Ringkasan Total & Actions Sidebar */}
+            <div className="bg-[#141517] border border-[#2A2A2A] rounded-xl p-5 shadow-xl space-y-5">
+              {/* Subtotal */}
+              <div className="space-y-3.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[#909090] font-medium">Sub Total</span>
+                  <span className="font-mono text-white font-semibold">{formatAmount(calculateSubTotal())}</span>
+                </div>
+
+                {/* Modifier Inputs Block */}
+                <div className="border-t border-b border-[#2A2A2A]/50 py-3 space-y-2.5">
+                  
+                  {/* Additional Discount */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#909090] text-[11px]">Additional Discount</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowAddDiscountInput(!showAddDiscountInput)}
+                        className="text-xs font-semibold text-[#E87A5D] hover:underline cursor-pointer"
+                      >
+                        {showAddDiscountInput ? 'Hide' : '+ Set'}
+                      </button>
+                    </div>
+                    {showAddDiscountInput && (
+                      <input 
+                        type="number" 
+                        min="0"
+                        value={addDiscount || ''}
+                        onChange={(e) => setAddDiscount(parseFloat(e.target.value) || 0)}
+                        placeholder="Rp 0"
+                        className="w-full h-[38px] bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-1.5 text-right text-[13px] text-white focus:outline-none focus:border-[#E87A5D] transition-colors"
+                      />
+                    )}
+                  </div>
+
+                  {/* Shipping Fee */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#909090] text-[11px]">Shipping Fee</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowShipFeeInput(!showShipFeeInput)}
+                        className="text-xs font-semibold text-[#E87A5D] hover:underline cursor-pointer"
+                      >
+                        {showShipFeeInput ? 'Hide' : '+ Set'}
+                      </button>
+                    </div>
+                    {showShipFeeInput && (
+                      <input 
+                        type="number" 
+                        min="0"
+                        value={shipFee || ''}
+                        onChange={(e) => setShipFee(parseFloat(e.target.value) || 0)}
+                        placeholder="Rp 0"
+                        className="w-full h-[38px] bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-1.5 text-right text-[13px] text-white focus:outline-none focus:border-[#E87A5D] transition-colors"
+                      />
+                    )}
+                  </div>
+
+                  {/* Transaction Fee */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#909090] text-[11px]">Transaction Fee</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowTxnFeeInput(!showTxnFeeInput)}
+                        className="text-xs font-semibold text-[#E87A5D] hover:underline cursor-pointer"
+                      >
+                        {showTxnFeeInput ? 'Hide' : '+ Set'}
+                      </button>
+                    </div>
+                    {showTxnFeeInput && (
+                      <input 
+                        type="number" 
+                        min="0"
+                        value={txnFee || ''}
+                        onChange={(e) => setTxnFee(parseFloat(e.target.value) || 0)}
+                        placeholder="Rp 0"
+                        className="w-full h-[38px] bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-1.5 text-right text-[13px] text-white focus:outline-none focus:border-[#E87A5D] transition-colors"
+                      />
+                    )}
+                  </div>
+
+                  {/* Withholding Tax Deduction */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#909090] text-[11px]">Withholding Tax Deduction</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowWithholdingInput(!showWithholdingInput)}
+                        className="text-xs font-semibold text-[#E87A5D] hover:underline cursor-pointer"
+                      >
+                        {showWithholdingInput ? 'Hide' : '+ Set'}
+                      </button>
+                    </div>
+                    {showWithholdingInput && (
+                      <input 
+                        type="number" 
+                        min="0"
+                        value={withholdingTax || ''}
+                        onChange={(e) => setWithholdingTax(parseFloat(e.target.value) || 0)}
+                        placeholder="Rp 0"
+                        className="w-full h-[38px] bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-1.5 text-right text-[13px] text-white focus:outline-none focus:border-[#E87A5D] transition-colors"
+                      />
+                    )}
+                  </div>
+
+                </div>
+
+                {/* Grand Total Display */}
+                <div className="flex justify-between items-center text-xs pt-1">
+                  <span className="text-white font-bold">Grand Total</span>
+                  <span className="font-mono text-white font-bold">{formatAmount(calculateGrandTotal())}</span>
+                </div>
+              </div>
+
+
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    );
