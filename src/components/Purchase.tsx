@@ -2266,9 +2266,6 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                 </span>
                 <p className="text-[13px] font-bold text-gray-900 mb-1">{invoiceNo || 'INV-2026-001'}</p>
                 <div className="text-[12px] text-gray-500 space-y-0.5">
-                  {refStr && (
-                    <p>No. Ref: {refStr}</p>
-                  )}
                   <p>Issue Date: {formatPreviewDate(transDate)}</p>
                   <p>Due Date: {formatPreviewDate(dueDateStr)}</p>
                 </div>
@@ -5552,9 +5549,6 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                             {quickPreviewInvoice.type || (isSales ? 'Sales' : 'Purchase')}
                           </span>
                           <p className="text-xs font-bold text-gray-900">{quickPreviewInvoice.id}</p>
-                          {quickPreviewInvoice.ref && (
-                            <p className="text-[11px] text-gray-500 mt-0.5">No. Ref: {quickPreviewInvoice.ref}</p>
-                          )}
                           <p className="text-[11px] text-gray-500 mt-0.5">Tanggal: {quickPreviewInvoice.date}</p>
                           {quickPreviewInvoice.due && (
                             <p className="text-[11px] text-gray-500">Jatuh Tempo: {quickPreviewInvoice.due}</p>
@@ -5564,7 +5558,7 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                     );
                   })()}
 
-                  {/* Partner Info */}
+                  {/* Partner Info & Transaction Info */}
                   <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
                     <div>
                       <p className="text-[11px] text-gray-500 mb-1">
@@ -5573,20 +5567,15 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                       <p className="font-bold text-gray-900">{quickPreviewInvoice.partnerName || quickPreviewInvoice.distributor || '-'}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Total Document</p>
+                      <p className="text-[11px] text-gray-500 mb-1">Informasi Transaksi</p>
+                      <p className="text-[11px] text-gray-500 mb-2">No. Referensi: {quickPreviewInvoice.ref || '-'}</p>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Total Document</p>
                       <p className="text-base font-bold text-emerald-600">Rp {quickPreviewInvoice.total || '0'}</p>
                       {quickPreviewInvoice.remaining !== undefined && quickPreviewInvoice.remaining !== '0' && (
                         <p className="text-[11px] text-red-500 mt-0.5 font-medium">Sisa: Rp {quickPreviewInvoice.remaining}</p>
                       )}
                     </div>
                   </div>
-
-                  {/* Reference (Plain text directly above table) */}
-                  {quickPreviewInvoice.ref && (
-                    <div className="mb-2 text-[11px] text-gray-700 font-medium">
-                      <span className="text-gray-500 font-normal">No. Referensi:</span> <span className="font-semibold text-gray-900">{quickPreviewInvoice.ref}</span>
-                    </div>
-                  )}
 
                   {/* Line items if available */}
                   {quickPreviewInvoice.items && quickPreviewInvoice.items.length > 0 ? (
