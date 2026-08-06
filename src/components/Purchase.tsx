@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { getStoredInvoices, registerNewInvoice, updateInvoice, getStoredPartners, getStoredProducts, saveInvoices, savePartners, saveProducts, getIdPrefixSettings, getStoredAccounts, getInvoiceLogs, formatLogTimestamp, DocumentActivityLog, InvoiceItem, getCompanySettings } from '../lib/state';
+import { getStoredInvoices, registerNewInvoice, updateInvoice, getStoredPartners, getStoredProducts, saveInvoices, savePartners, saveProducts, getIdPrefixSettings, getNextId, getStoredAccounts, getInvoiceLogs, formatLogTimestamp, DocumentActivityLog, InvoiceItem, getCompanySettings } from '../lib/state';
 import { setHasUnsavedChanges } from '../lib/unsaved';
 import { 
   ChevronDown, Filter, List, LayoutGrid, Kanban, SlidersHorizontal, 
@@ -508,8 +508,9 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
     if (!nameTrimmed) return;
 
     const currentPartners = getStoredPartners();
-    const prefix = addPartnerCategory === 'Customer' ? 'CST' : 'PRT';
-    const newId = addPartnerNumber.trim() || `${prefix}-${String(currentPartners.length + 1).padStart(3, '0')}`;
+    const settings = getIdPrefixSettings();
+    const prefix = addPartnerCategory === 'Customer' ? (settings.customerPrefix || 'CSTMR-') : (settings.distributorPrefix || 'DIST-');
+    const newId = addPartnerNumber.trim() || getNextId(currentPartners, prefix);
     const salutationPrefix = addPartnerSalutation && addPartnerSalutation !== 'Sapaan' && addPartnerSalutation !== 'Salutation' ? `${addPartnerSalutation} ` : '';
     const finalPic = `${salutationPrefix}${addPartnerPic}`.trim() || '-';
 
@@ -2467,8 +2468,9 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                                           setVendorSearch('');
                                           const defaultCat: 'Customer' | 'Distributor' = isSales ? 'Customer' : 'Distributor';
                                           setAddPartnerCategory(defaultCat);
-                                          const prefix = defaultCat === 'Customer' ? 'CST' : 'PRT';
-                                          setAddPartnerNumber(`${prefix}-${String(getStoredPartners().length + 1).padStart(3, '0')}`);
+                                          const settings = getIdPrefixSettings();
+                                          const prefix = defaultCat === 'Customer' ? (settings.customerPrefix || 'CSTMR-') : (settings.distributorPrefix || 'DIST-');
+                                          setAddPartnerNumber(getNextId(getStoredPartners(), prefix));
                                           setShowAddPartnerModal(true);
                                         }}
                                         className="w-full text-left px-3.5 py-2.5 text-[13px] font-medium rounded-xl transition-all flex items-center gap-1.5 text-[#EA580C] hover:bg-[#20222B] border-t border-[#262830] mt-1 cursor-pointer"

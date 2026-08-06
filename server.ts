@@ -1,6 +1,6 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+
 import { GoogleGenAI } from "@google/genai";
 
 async function startServer() {
@@ -36,7 +36,7 @@ When asked about any metric, product, transaction, partner, warehouse, financial
       const contents = `[USER QUESTION]: ${prompt}\n\n[LIVE APPLICATION DATA CONTEXT]:\n${context || 'No context provided'}`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.5-flash",
         contents: contents,
         config: {
           systemInstruction: systemInstruction,
@@ -54,6 +54,7 @@ When asked about any metric, product, transaction, partner, warehouse, financial
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

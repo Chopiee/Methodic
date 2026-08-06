@@ -275,6 +275,104 @@ export const getIdPrefixSettings = (): IdPrefixSettings => {
 };
 
 export const saveIdPrefixSettings = (settings: IdPrefixSettings): void => {
+  const oldSettings = getIdPrefixSettings();
+  
+  const updatePrefix = (oldId: string, oldPref: string, newPref: string) => {
+    if (oldId && oldPref && newPref && oldPref !== newPref && oldId.startsWith(oldPref)) {
+      return newPref + oldId.slice(oldPref.length);
+    }
+    return oldId;
+  };
+
+  // 1. Update Products
+  const products = getStoredProducts();
+  let productsChanged = false;
+  products.forEach(p => {
+    const newId = updatePrefix(p.id, oldSettings.productPrefix || 'PRD-', settings.productPrefix || 'PRD-');
+    if (newId !== p.id) {
+      p.id = newId;
+      productsChanged = true;
+    }
+  });
+  if (productsChanged) saveProducts(products);
+
+  // 2. Update Partners (Customers and Distributors)
+  const partners = getStoredPartners();
+  let partnersChanged = false;
+  partners.forEach(p => {
+    let newId = p.id;
+    if (p.category === 'Customer') {
+      newId = updatePrefix(newId, oldSettings.customerPrefix || 'CSTMR-', settings.customerPrefix || 'CSTMR-');
+    } else {
+      newId = updatePrefix(newId, oldSettings.distributorPrefix || 'DIST-', settings.distributorPrefix || 'DIST-');
+    }
+    if (newId !== p.id) {
+      p.id = newId;
+      partnersChanged = true;
+    }
+  });
+  if (partnersChanged) savePartners(partners);
+
+  // 3. Update Costs
+  const costs = getStoredCosts();
+  let costsChanged = false;
+  costs.forEach(c => {
+    const newId = updatePrefix(c.id, oldSettings.costPrefix || 'CST-', settings.costPrefix || 'CST-');
+    if (newId !== c.id) {
+      c.id = newId;
+      costsChanged = true;
+    }
+  });
+  if (costsChanged) saveCosts(costs);
+
+  // 4. Update Invoices (and Quotations, Deliveries, Returns)
+  const invoices = getStoredInvoices();
+  let invoicesChanged = false;
+  invoices.forEach(inv => {
+    let oldPref = '';
+    let newPref = '';
+    
+    if (inv.type === 'Invoice') {
+      oldPref = inv.isSales ? (oldSettings.salesInvoicePrefix || 'SLS-') : (oldSettings.purchaseInvoicePrefix || 'PUR-');
+      newPref = inv.isSales ? (settings.salesInvoicePrefix || 'SLS-') : (settings.purchaseInvoicePrefix || 'PUR-');
+    } else if (inv.type === 'Quotation') {
+      oldPref = inv.isSales ? (oldSettings.salesQuotationPrefix || 'QSL-') : (oldSettings.purchaseQuotationPrefix || 'QPR-');
+      newPref = inv.isSales ? (settings.salesQuotationPrefix || 'QSL-') : (settings.purchaseQuotationPrefix || 'QPR-');
+    } else if (inv.type === 'Delivery') {
+      oldPref = inv.isSales ? (oldSettings.deliveryOrderPrefix || 'SJL-') : 'SJR-';
+      newPref = inv.isSales ? (settings.deliveryOrderPrefix || 'SJL-') : 'SJR-';
+    } else if (inv.type === 'Return') {
+      oldPref = inv.isSales ? (oldSettings.returnSalesPrefix || 'RTS-') : (oldSettings.returnPurchasePrefix || 'RTP-');
+      newPref = inv.isSales ? (settings.returnSalesPrefix || 'RTS-') : (settings.returnPurchasePrefix || 'RTP-');
+    }
+    
+    if (oldPref && newPref) {
+      const newId = updatePrefix(inv.id, oldPref, newPref);
+      if (newId !== inv.id) {
+        inv.id = newId;
+        invoicesChanged = true;
+      }
+    }
+    
+    // Also update product IDs inside invoice items
+    if (inv.items && Array.isArray(inv.items)) {
+      inv.items.forEach(item => {
+        if (item.productId) {
+          const newProductId = updatePrefix(item.productId, oldSettings.productPrefix || 'PRD-', settings.productPrefix || 'PRD-');
+          if (newProductId !== item.productId) {
+            item.productId = newProductId;
+            invoicesChanged = true;
+          }
+        }
+      });
+    }
+  });
+  if (invoicesChanged) saveInvoices(invoices);
+
+  // 5. Update Ledger (Journal Entries)
+  // JournalEntry currently does not store document IDs, only descriptions.
+  // We can skip updating the ledger references.
+
   setStorageItem<IdPrefixSettings>('methodic_id_prefix_settings_v2', settings);
 };
 

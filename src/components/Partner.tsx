@@ -29,7 +29,7 @@ import {
   Landmark,
   BookOpen
 } from 'lucide-react';
-import { getStoredPartners, savePartners, PartnerItem } from '../lib/state';
+import { getStoredPartners, savePartners, PartnerItem, getIdPrefixSettings, getNextId } from '../lib/state';
 
 interface Partner {
   id: string;
@@ -241,8 +241,9 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
 
     setFormGroup('All Groups');
     setFormSalutation('Salutation');
-    const prefix = initialCategory === 'Customer' ? 'CST' : 'PRT';
-    setFormNumber(`${prefix}-${String(partners.length + 1).padStart(3, '0')}`);
+    const settings = getIdPrefixSettings();
+    const prefix = initialCategory === 'Customer' ? (settings.customerPrefix || 'CSTMR-') : (settings.distributorPrefix || 'DIST-');
+    setFormNumber(getNextId(partners, prefix));
     setFormCompany('');
     setFormSecondaryPhone('');
     setFormFax('');
@@ -328,8 +329,9 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
       });
       syncPartnersToStorage(updated);
     } else {
-      const prefix = formCategory === 'Customer' ? 'CST' : 'PRT';
-      const newId = formNumber.trim() || `${prefix}-${String(partners.length + 1).padStart(3, '0')}`;
+      const settings = getIdPrefixSettings();
+      const prefix = formCategory === 'Customer' ? (settings.customerPrefix || 'CSTMR-') : (settings.distributorPrefix || 'DIST-');
+      const newId = formNumber.trim() || getNextId(partners, prefix);
       const newPartner: Partner = {
         id: newId,
         name: finalDisplayName,
@@ -783,6 +785,11 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
                                         type="button"
                                         onClick={() => {
                                           setFormCategory(cat);
+                                          if (!editingPartner) {
+                                            const settings = getIdPrefixSettings();
+                                            const prefix = cat === 'Customer' ? (settings.customerPrefix || 'CSTMR-') : (settings.distributorPrefix || 'DIST-');
+                                            setFormNumber(getNextId(partners, prefix));
+                                          }
                                           setShowCategoryDropdown(false);
                                         }}
                                         className={`w-full text-left px-3.5 py-2.5 text-[13px] font-medium rounded-xl transition-all flex items-center justify-between cursor-pointer ${
