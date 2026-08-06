@@ -833,7 +833,10 @@ export function Reports() {
 
                     {/* Gross Profit */}
                     <div className="flex justify-between items-center text-[13px] font-bold bg-[#1C1C1C]/50 border border-[#2A2B2A] px-4 py-3 rounded-lg my-2 shadow-sm">
-                      <span className="text-white">LABA KOTOR (GROSS PROFIT)</span>
+                      <div>
+                        <span className="text-white block">LABA KOTOR (GROSS PROFIT)</span>
+                        <span className="text-[10px] text-[#808080] font-normal block">Pendapatan Usaha dikurangi Harga Pokok Penjualan (HPP)</span>
+                      </div>
                       <span className="text-white font-bold">{formatRupiah(grossProfit)}</span>
                     </div>
 

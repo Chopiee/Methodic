@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { getStoredInvoices, registerNewInvoice, updateInvoice, getStoredPartners, getStoredProducts, saveInvoices, savePartners, saveProducts, getIdPrefixSettings, getNextId, getStoredAccounts, getInvoiceLogs, formatLogTimestamp, DocumentActivityLog, InvoiceItem, getCompanySettings } from '../lib/state';
+import { getStoredInvoices, registerNewInvoice, updateInvoice, deleteInvoice, getStoredPartners, getStoredProducts, saveInvoices, savePartners, saveProducts, getIdPrefixSettings, getNextId, getStoredAccounts, getInvoiceLogs, formatLogTimestamp, DocumentActivityLog, InvoiceItem, getCompanySettings } from '../lib/state';
 import { setHasUnsavedChanges } from '../lib/unsaved';
 import { 
   ChevronDown, Filter, List, LayoutGrid, Kanban, SlidersHorizontal, 
@@ -1337,9 +1337,8 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
   };
 
   const handleDeleteSelected = () => {
-    const updatedInvoices = invoices.filter(inv => !selectedIds.includes(inv.id));
-    setInvoices(updatedInvoices);
-    saveInvoices(updatedInvoices);
+    selectedIds.forEach(id => deleteInvoice(id));
+    setInvoices(getStoredInvoices());
     setSelectedIds([]);
     setShowDeleteModal(false);
   };
@@ -1391,9 +1390,8 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
 
   const handleDeleteSingle = () => {
     if (editingInvoiceId) {
-      const updatedInvoices = invoices.filter(inv => inv.id !== editingInvoiceId);
-      setInvoices(updatedInvoices);
-      saveInvoices(updatedInvoices);
+      deleteInvoice(editingInvoiceId);
+      setInvoices(getStoredInvoices());
       setEditingInvoiceId(null);
       setView('list');
       setShowSingleDeleteModal(false);

@@ -804,20 +804,25 @@ export const registerNewInvoice = (invoice: Omit<InvoiceItem, 'status'> & { stat
     const bankName = bankCode === 'Cash' || bankCode === 'Kas' ? 'Kas di Toko' : (bankCode.startsWith('Bank') ? bankCode : 'Bank ' + bankCode);
 
     if (invoice.isSales) {
+      const debitAcc = (invoice as any).customDebitAccount ? (invoice as any).customDebitAccount.replace(/^\d+\s*-\s*/, '') : 'Piutang Usaha';
+      const creditAcc = (invoice as any).customCreditAccount ? (invoice as any).customCreditAccount.replace(/^\d+\s*-\s*/, '') : 'Penjualan Produk';
+      const jvInvId = `JV-2026-INV-${invoice.id}`;
+      const jvPayId = `JV-2026-PAY-${invoice.id}`;
+
       // 1. Invoice recognition
       ledger.unshift({
-        id: `JV-2026-0${ledger.length + 1}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Piutang Usaha',
+        account: debitAcc,
         category: 'Asset',
         description: desc,
         debit: invoice.total,
         credit: '-',
         status: 'Posted'
       }, {
-        id: `JV-2026-0${ledger.length + 2}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Penjualan Produk',
+        account: creditAcc,
         category: 'Revenue',
         description: desc,
         debit: '-',
@@ -829,7 +834,7 @@ export const registerNewInvoice = (invoice: Omit<InvoiceItem, 'status'> & { stat
       const paidAmount = invoice.total - invoice.remaining;
       if (paidAmount > 0) {
         ledger.unshift({
-          id: `JV-2026-0${ledger.length + 1}`,
+          id: jvPayId,
           date: dateFormatted,
           account: bankName,
           category: 'Asset',
@@ -838,9 +843,9 @@ export const registerNewInvoice = (invoice: Omit<InvoiceItem, 'status'> & { stat
           credit: '-',
           status: 'Posted'
         }, {
-          id: `JV-2026-0${ledger.length + 2}`,
+          id: jvPayId,
           date: dateFormatted,
-          account: 'Piutang Usaha',
+          account: debitAcc,
           category: 'Asset',
           description: `Pelunasan: ${desc}`,
           debit: '-',
@@ -849,20 +854,25 @@ export const registerNewInvoice = (invoice: Omit<InvoiceItem, 'status'> & { stat
         });
       }
     } else {
+      const debitAcc = (invoice as any).customDebitAccount ? (invoice as any).customDebitAccount.replace(/^\d+\s*-\s*/, '') : 'Harga Pokok Penjualan';
+      const creditAcc = (invoice as any).customCreditAccount ? (invoice as any).customCreditAccount.replace(/^\d+\s*-\s*/, '') : 'Utang Usaha';
+      const jvInvId = `JV-2026-INV-${invoice.id}`;
+      const jvPayId = `JV-2026-PAY-${invoice.id}`;
+
       // 1. Invoice recognition
       ledger.unshift({
-        id: `JV-2026-0${ledger.length + 1}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Harga Pokok Penjualan',
+        account: debitAcc,
         category: 'Expense',
         description: desc,
         debit: invoice.total,
         credit: '-',
         status: 'Posted'
       }, {
-        id: `JV-2026-0${ledger.length + 2}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Utang Usaha',
+        account: creditAcc,
         category: 'Liability',
         description: desc,
         debit: '-',
@@ -874,16 +884,16 @@ export const registerNewInvoice = (invoice: Omit<InvoiceItem, 'status'> & { stat
       const paidAmount = invoice.total - invoice.remaining;
       if (paidAmount > 0) {
         ledger.unshift({
-          id: `JV-2026-0${ledger.length + 1}`,
+          id: jvPayId,
           date: dateFormatted,
-          account: 'Utang Usaha',
+          account: creditAcc,
           category: 'Liability',
           description: `Pembayaran: ${desc}`,
           debit: paidAmount,
           credit: '-',
           status: 'Posted'
         }, {
-          id: `JV-2026-0${ledger.length + 2}`,
+          id: jvPayId,
           date: dateFormatted,
           account: bankName,
           category: 'Asset',
@@ -1016,20 +1026,25 @@ export const updateInvoice = (updatedInvoice: Omit<InvoiceItem, 'status'> & { st
     const bankName = bankCode === 'Cash' || bankCode === 'Kas' ? 'Kas di Toko' : (bankCode.startsWith('Bank') ? bankCode : 'Bank ' + bankCode);
 
     if (fullUpdatedInvoice.isSales) {
+      const debitAcc = (fullUpdatedInvoice as any).customDebitAccount ? (fullUpdatedInvoice as any).customDebitAccount.replace(/^\d+\s*-\s*/, '') : 'Piutang Usaha';
+      const creditAcc = (fullUpdatedInvoice as any).customCreditAccount ? (fullUpdatedInvoice as any).customCreditAccount.replace(/^\d+\s*-\s*/, '') : 'Penjualan Produk';
+      const jvInvId = `JV-2026-INV-${fullUpdatedInvoice.id}`;
+      const jvPayId = `JV-2026-PAY-${fullUpdatedInvoice.id}`;
+
       // 1. Invoice recognition
       filteredLedger.unshift({
-        id: `JV-2026-0${filteredLedger.length + 1}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Piutang Usaha',
+        account: debitAcc,
         category: 'Asset',
         description: desc,
         debit: fullUpdatedInvoice.total,
         credit: '-',
         status: 'Posted'
       }, {
-        id: `JV-2026-0${filteredLedger.length + 2}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Penjualan Produk',
+        account: creditAcc,
         category: 'Revenue',
         description: desc,
         debit: '-',
@@ -1041,7 +1056,7 @@ export const updateInvoice = (updatedInvoice: Omit<InvoiceItem, 'status'> & { st
       const paidAmount = fullUpdatedInvoice.total - fullUpdatedInvoice.remaining;
       if (paidAmount > 0) {
         filteredLedger.unshift({
-          id: `JV-2026-0${filteredLedger.length + 1}`,
+          id: jvPayId,
           date: dateFormatted,
           account: bankName,
           category: 'Asset',
@@ -1050,9 +1065,9 @@ export const updateInvoice = (updatedInvoice: Omit<InvoiceItem, 'status'> & { st
           credit: '-',
           status: 'Posted'
         }, {
-          id: `JV-2026-0${filteredLedger.length + 2}`,
+          id: jvPayId,
           date: dateFormatted,
-          account: 'Piutang Usaha',
+          account: debitAcc,
           category: 'Asset',
           description: `Pelunasan: ${desc}`,
           debit: '-',
@@ -1061,20 +1076,25 @@ export const updateInvoice = (updatedInvoice: Omit<InvoiceItem, 'status'> & { st
         });
       }
     } else {
+      const debitAcc = (fullUpdatedInvoice as any).customDebitAccount ? (fullUpdatedInvoice as any).customDebitAccount.replace(/^\d+\s*-\s*/, '') : 'Harga Pokok Penjualan';
+      const creditAcc = (fullUpdatedInvoice as any).customCreditAccount ? (fullUpdatedInvoice as any).customCreditAccount.replace(/^\d+\s*-\s*/, '') : 'Utang Usaha';
+      const jvInvId = `JV-2026-INV-${fullUpdatedInvoice.id}`;
+      const jvPayId = `JV-2026-PAY-${fullUpdatedInvoice.id}`;
+
       // 1. Invoice recognition
       filteredLedger.unshift({
-        id: `JV-2026-0${filteredLedger.length + 1}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Harga Pokok Penjualan',
+        account: debitAcc,
         category: 'Expense',
         description: desc,
         debit: fullUpdatedInvoice.total,
         credit: '-',
         status: 'Posted'
       }, {
-        id: `JV-2026-0${filteredLedger.length + 2}`,
+        id: jvInvId,
         date: dateFormatted,
-        account: 'Utang Usaha',
+        account: creditAcc,
         category: 'Liability',
         description: desc,
         debit: '-',
@@ -1086,16 +1106,16 @@ export const updateInvoice = (updatedInvoice: Omit<InvoiceItem, 'status'> & { st
       const paidAmount = fullUpdatedInvoice.total - fullUpdatedInvoice.remaining;
       if (paidAmount > 0) {
         filteredLedger.unshift({
-          id: `JV-2026-0${filteredLedger.length + 1}`,
+          id: jvPayId,
           date: dateFormatted,
-          account: 'Utang Usaha',
+          account: creditAcc,
           category: 'Liability',
           description: `Pembayaran: ${desc}`,
           debit: paidAmount,
           credit: '-',
           status: 'Posted'
         }, {
-          id: `JV-2026-0${filteredLedger.length + 2}`,
+          id: jvPayId,
           date: dateFormatted,
           account: bankName,
           category: 'Asset',
@@ -1107,6 +1127,16 @@ export const updateInvoice = (updatedInvoice: Omit<InvoiceItem, 'status'> & { st
       }
     }
   }
+  saveLedger(filteredLedger);
+};
+
+export const deleteInvoice = (invoiceId: string) => {
+  const invoices = getStoredInvoices();
+  const updatedInvoices = invoices.filter(inv => inv.id !== invoiceId);
+  saveInvoices(updatedInvoices);
+
+  const ledger = getStoredLedger();
+  const filteredLedger = ledger.filter(l => !l.description.includes(invoiceId) && !l.id.includes(invoiceId));
   saveLedger(filteredLedger);
 };
 
@@ -1517,7 +1547,18 @@ export const getAccountsWithDynamicBalances = (): AccountItem[] => {
 
   // Calculate Ledger (Jurnal Umum / Transaksi Manual) Impact
   const ledger = getStoredLedger();
-  const validLedger = ledger.filter(entry => entry.status !== 'Draft');
+  const validLedger = ledger.filter(entry => {
+    if (entry.status === 'Draft') return false;
+    // Exclude automatic entries generated by Invoices and Costs to avoid double counting
+    if (entry.id.startsWith('JV-2026-INV-') || entry.id.startsWith('JV-2026-SLS-') || entry.id.startsWith('JV-2026-PUR-') || entry.id.startsWith('JV-2026-PAY-') || entry.id.startsWith('JV-2026-CST-')) {
+      return false;
+    }
+    const d = entry.description || '';
+    if (d.includes('Sales Invoice') || d.includes('Purchase Invoice') || d.startsWith('Pelunasan:') || d.startsWith('Pembayaran:') || d.startsWith('Biaya:') || d.startsWith('Pengeluaran Biaya')) {
+      return false;
+    }
+    return true;
+  });
   const ledgerDeltas: Record<string, number> = {};
 
   validLedger.forEach(entry => {

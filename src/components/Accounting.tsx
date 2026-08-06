@@ -171,8 +171,19 @@ const buildUnifiedTransactions = (): UnifiedTransaction[] => {
 
   // 3. Manual Journal Ledger entries
   if (Array.isArray(ledger)) {
+    const manualEntries = ledger.filter(entry => {
+      if (entry.id.startsWith('JV-2026-INV-') || entry.id.startsWith('JV-2026-SLS-') || entry.id.startsWith('JV-2026-PUR-') || entry.id.startsWith('JV-2026-PAY-') || entry.id.startsWith('JV-2026-CST-')) {
+        return false;
+      }
+      const d = entry.description || '';
+      if (d.includes('Sales Invoice') || d.includes('Purchase Invoice') || d.startsWith('Pelunasan:') || d.startsWith('Pembayaran:') || d.startsWith('Biaya:') || d.startsWith('Pengeluaran Biaya')) {
+        return false;
+      }
+      return true;
+    });
+
     const ledgerMap: Record<string, { debit?: any; credit?: any }> = {};
-    ledger.forEach(entry => {
+    manualEntries.forEach(entry => {
       if (!ledgerMap[entry.id]) {
         ledgerMap[entry.id] = {};
       }
@@ -516,11 +527,17 @@ export function Accounting() {
   const totalKewajiban = accounts.find(a => a.code === '2000')?.balance || (totalHutangUsaha + totalHutangLainnya + totalHutangPanjang);
 
   const totalEkuitas = accounts.find(a => a.code === '3000')?.balance || (getBal('3100') - getBal('3200') + getBal('3300') + getBal('3400'));
-  const totalPendapatan = getBal('4100');
-  const totalPendapatanLainnya = getBal('4200');
-  const totalHPP = getBal('5100');
+  const totalPendapatan = accounts
+    .filter(a => (a.category === 'Pendapatan' || a.parent === '4000') && !a.isHeader && a.code !== '4200')
+    .reduce((sum, a) => sum + a.balance, 0) || getBal('4100');
+  const totalPendapatanLainnya = accounts
+    .filter(a => (a.code === '4200' || a.category === 'Pendapatan Lainnya'))
+    .reduce((sum, a) => sum + a.balance, 0) || getBal('4200');
+  const totalHPP = accounts
+    .filter(a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.parent === '5000') && !a.isHeader)
+    .reduce((sum, a) => sum + a.balance, 0) || getBal('5100');
   const totalBebanOperasional = accounts
-    .filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.subCategory === 'Operating Expense') && !a.isHeader)
+    .filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.subCategory === 'Operating Expense' || a.parent === '6000') && !a.isHeader)
     .reduce((sum, a) => sum + a.balance, 0);
 
   const labaKotor = totalPendapatan - totalHPP;
@@ -855,8 +872,8 @@ export function Accounting() {
               </thead>
               <tbody className="divide-y divide-[#2A2A2A]/40 text-xs">
                 {ledger.length > 0 ? (
-                  ledger.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-[#141517] transition-colors">
+                  ledger.map((entry, index) => (
+                    <tr key={`${entry.id}-${entry.account}-${index}`} className="hover:bg-[#141517] transition-colors">
                       <td className="py-3.5 px-4 font-mono text-[#808080]">{entry.id}</td>
                       <td className="py-3.5 px-4 text-[#D5D5D5]">{entry.date}</td>
                       <td className="py-3.5 px-4 font-semibold text-white">{entry.account}</td>
@@ -1231,8 +1248,11 @@ export function Accounting() {
               </div>
 
               {/* Gross Profit */}
-              <div className="p-3 bg-[#0A0A0A] rounded-xl border border-[#2A2A2A] flex justify-between font-bold text-sm text-white">
-                <span>LABA KOTOR (GROSS PROFIT)</span>
+              <div className="p-3 bg-[#0A0A0A] rounded-xl border border-[#2A2A2A] flex justify-between items-center font-bold text-sm text-white">
+                <div>
+                  <span className="block">LABA KOTOR (GROSS PROFIT)</span>
+                  <span className="block text-[10px] text-[#808080] font-normal">Pendapatan Usaha dikurangi Harga Pokok Penjualan (HPP)</span>
+                </div>
                 <span className={labaKotor >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}>
                   Rp {labaKotor.toLocaleString('id-ID')}
                 </span>
