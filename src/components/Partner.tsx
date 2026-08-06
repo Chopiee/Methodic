@@ -41,6 +41,7 @@ interface Partner {
   address: string;
   balance: string;
   status: 'Active' | 'Inactive';
+  npwp?: string;
 }
 
 export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?: string }) {
@@ -138,7 +139,8 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
       phone: p.phone || '-',
       address: p.address || '-',
       balance: typeof p.balance === 'number' ? `Rp ${p.balance.toLocaleString('id-ID')}` : (p.balance || 'Rp 0'),
-      status: (p.status || 'Active') as 'Active' | 'Inactive'
+      status: (p.status || 'Active') as 'Active' | 'Inactive',
+      npwp: p.npwp || '-'
     }));
   });
 
@@ -153,7 +155,8 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
       phone: p.phone,
       address: p.address,
       balance: typeof p.balance === 'number' ? p.balance : Number(p.balance.replace(/[^0-9]/g, '')) || 0,
-      status: p.status
+      status: p.status,
+      npwp: p.npwp || '-'
     }));
     savePartners(toSave);
   };
@@ -296,6 +299,7 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
     setFormCompany(p.name);
     setFormNumber(p.id);
     setFormBillingAddress(p.address === '-' ? '' : p.address);
+    setFormTaxId(p.npwp && p.npwp !== '-' ? p.npwp : '');
 
     setIsContactProfileOpen(true);
     setView('form');
@@ -322,7 +326,8 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
             phone: formPhone.trim() || '-',
             address: formBillingAddress.trim() || formAddress.trim() || '-',
             balance: formattedBal,
-            status: formStatus
+            status: formStatus,
+            npwp: formTaxId.trim() || '-'
           };
         }
         return p;
@@ -341,7 +346,8 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
         phone: formPhone.trim() || '-',
         address: formBillingAddress.trim() || formAddress.trim() || '-',
         balance: formattedBal,
-        status: formStatus
+        status: formStatus,
+        npwp: formTaxId.trim() || '-'
       };
       syncPartnersToStorage([newPartner, ...partners]);
     }
@@ -549,7 +555,14 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
                         >
                           <td className="py-3.5 px-4">
                             <div className="flex flex-col">
-                              <span className="text-[13px] text-white font-semibold">{p.name}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[13px] text-white font-semibold">{p.name}</span>
+                                {p.npwp && p.npwp !== '-' && (
+                                  <span className="text-[10px] bg-[#222530] text-[#A0A2AC] px-1.5 py-0.5 rounded border border-[#2B2D38] font-mono shrink-0">
+                                    NPWP: {p.npwp}
+                                  </span>
+                                )}
+                              </div>
                               <span className="flex items-center gap-1 text-[11px] text-[#7E8088] mt-0.5">
                                 <MapPin size={11} className="shrink-0" />
                                 <span className="truncate max-w-[240px]">{p.address}</span>
@@ -938,8 +951,8 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
                         </div>
                       </div>
 
-                      {/* Row 3: Contact ID & Phone */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Row 3: Contact ID, NPWP & Phone */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-xs font-semibold text-[#8E9099] mb-1.5">
                             Contact ID
@@ -949,6 +962,19 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
                             value={formNumber}
                             onChange={(e) => setFormNumber(e.target.value)}
                             placeholder="Partner ID Number"
+                            className="w-full bg-[#1A1C22] border border-[#2B2D36] rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-[#3A3D4A] placeholder:text-[#525562] transition-colors"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-[#8E9099] mb-1.5">
+                            Nomor NPWP / Tax ID
+                          </label>
+                          <input
+                            type="text"
+                            value={formTaxId}
+                            onChange={(e) => setFormTaxId(e.target.value)}
+                            placeholder="e.g. 01.234.567.8-012.000"
                             className="w-full bg-[#1A1C22] border border-[#2B2D36] rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-[#3A3D4A] placeholder:text-[#525562] transition-colors"
                           />
                         </div>

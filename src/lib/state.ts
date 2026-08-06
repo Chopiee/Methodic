@@ -156,6 +156,7 @@ export interface PartnerItem {
   address: string;
   balance: number;
   status: 'Active' | 'Inactive';
+  npwp?: string;
 }
 
 export interface AccountItem {

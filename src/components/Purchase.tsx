@@ -457,6 +457,7 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
   const [addPartnerEmail, setAddPartnerEmail] = useState('');
   const [addPartnerAddress, setAddPartnerAddress] = useState('');
   const [addPartnerBalance, setAddPartnerBalance] = useState('0');
+  const [addPartnerNpwp, setAddPartnerNpwp] = useState('');
   const [addPartnerStatus, setAddPartnerStatus] = useState<'Active' | 'Inactive'>('Active');
   const [addPartnerImage, setAddPartnerImage] = useState('');
 
@@ -524,6 +525,7 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
       address: addPartnerAddress.trim() || '-',
       balance: Number(addPartnerBalance || 0),
       status: addPartnerStatus,
+      npwp: addPartnerNpwp.trim() || '-',
       image: addPartnerImage || '',
       avatar: addPartnerImage || ''
     };
@@ -542,6 +544,7 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
     setAddPartnerEmail('');
     setAddPartnerAddress('');
     setAddPartnerBalance('0');
+    setAddPartnerNpwp('');
     setAddPartnerImage('');
   };
 
@@ -1924,6 +1927,303 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
       return dateStr;
     };
 
+    const handlePrintDocument = (docToPrint?: any) => {
+      const company = getCompanySettings();
+      const docId = docToPrint ? docToPrint.id : (invoiceNo || 'INV-2026-001');
+      const reference = docToPrint ? (docToPrint.ref || '-') : (refStr || '-');
+      const pName = docToPrint ? (docToPrint.partnerName || docToPrint.distributor || '-') : (vendorId || '-');
+      const dType = docToPrint ? docToPrint.type : newType;
+      const issueDate = docToPrint ? docToPrint.date : (transDate ? formatPreviewDate(transDate) : '-');
+      const dueDate = docToPrint ? docToPrint.due : (dueDateStr ? formatPreviewDate(dueDateStr) : '-');
+      const itemsList = docToPrint 
+        ? (docToPrint.items || []) 
+        : formLineItems.map(it => ({
+            description: it.description || 'Custom Item',
+            qty: it.qty || 1,
+            price: it.price || 0
+          }));
+      const totalAmt = docToPrint ? (docToPrint.total || 0) : calculateGrandTotal();
+
+      const partnerObj = getStoredPartners().find(p => p.name === pName);
+      const pAddress = partnerObj?.address || 'Jl. Raya Utama No. 88, Jakarta';
+      const pNpwp = partnerObj?.npwp && partnerObj.npwp !== '-' ? partnerObj.npwp : '';
+
+      const docTypeName = dType === 'Quotation' ? 'PENAWARAN HARGA (QUOTATION)' :
+                          dType === 'Delivery' ? 'SURAT JALAN (DELIVERY ORDER)' :
+                          dType === 'Return' ? 'SURAT RETUR (RETURN NOTE)' :
+                          (isSales ? 'FAKTUR PENJUALAN (SALES INVOICE)' : 'FAKTUR PEMBELIAN (PURCHASE INVOICE)');
+
+      const printWindow = window.open('', '_blank', 'width=850,height=1100');
+      if (!printWindow) return;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Surat_${docId}_${reference.replace(/[^a-zA-Z0-9_-]/g, '_')}</title>
+            <meta charset="utf-8" />
+            <style>
+              @page { size: A4; margin: 15mm 20mm 20mm 20mm; }
+              body {
+                font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                color: #1e293b;
+                background: #ffffff;
+                margin: 0;
+                padding: 24px;
+                font-size: 13px;
+                line-height: 1.5;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                border-bottom: 2px solid #0f172a;
+                padding-bottom: 16px;
+                margin-bottom: 20px;
+              }
+              .company-name {
+                font-size: 18px;
+                font-weight: 800;
+                color: #0f172a;
+                text-transform: uppercase;
+              }
+              .company-info {
+                font-size: 11px;
+                color: #64748b;
+                margin-top: 4px;
+              }
+              .doc-title {
+                text-align: right;
+              }
+              .doc-title h1 {
+                font-size: 15px;
+                font-weight: 800;
+                margin: 0 0 6px 0;
+                color: #ea580c;
+                text-transform: uppercase;
+              }
+              .meta-table {
+                margin-top: 4px;
+                font-size: 11px;
+                color: #334155;
+              }
+              .meta-table td {
+                padding: 2px 4px;
+              }
+              .meta-label {
+                font-weight: 600;
+                color: #64748b;
+              }
+              .meta-value {
+                font-weight: 700;
+                color: #0f172a;
+              }
+              .ref-text {
+                font-weight: 600;
+                color: #0f172a;
+              }
+              .info-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 24px;
+                margin-bottom: 24px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                padding: 16px;
+                border-radius: 8px;
+              }
+              .info-block p {
+                margin: 2px 0;
+              }
+              .info-block .label {
+                font-size: 10px;
+                font-weight: 700;
+                text-transform: uppercase;
+                color: #64748b;
+                margin-bottom: 4px;
+              }
+              table.items-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 24px;
+              }
+              table.items-table th {
+                background: #0f172a;
+                color: #ffffff;
+                font-size: 11px;
+                text-transform: uppercase;
+                padding: 10px 12px;
+                text-align: left;
+              }
+              table.items-table td {
+                border-bottom: 1px solid #e2e8f0;
+                padding: 10px 12px;
+                font-size: 12px;
+              }
+              .text-right { text-align: right; }
+              .text-center { text-align: center; }
+              .summary-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-top: 16px;
+              }
+              .notes-box {
+                max-width: 350px;
+                font-size: 11px;
+                color: #64748b;
+              }
+              .total-box {
+                width: 240px;
+                font-size: 13px;
+              }
+              .total-row.grand {
+                border-top: 2px solid #0f172a;
+                font-weight: 800;
+                font-size: 15px;
+                color: #0f172a;
+                padding-top: 8px;
+                margin-top: 4px;
+                display: flex;
+                justify-content: space-between;
+              }
+              .signatures {
+                margin-top: 48px;
+                display: flex;
+                justify-content: space-between;
+                text-align: center;
+              }
+              .sig-box {
+                width: 200px;
+              }
+              .sig-line {
+                margin-top: 60px;
+                border-top: 1px solid #0f172a;
+                font-weight: 700;
+                font-size: 12px;
+                padding-top: 4px;
+              }
+              @media print {
+                .no-print { display: none !important; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="no-print" style="margin-bottom: 16px; text-align: right;">
+              <button onclick="window.print()" style="padding: 8px 20px; background: #ea580c; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">
+                🖨️ Cetak / Simpan PDF
+              </button>
+            </div>
+
+            <div class="header">
+              <div>
+                <div class="company-name">${company.companyName}</div>
+                <div class="company-info">${company.companyAddress}</div>
+                <div class="company-info">Email: ${company.companyEmail} | Telp: ${company.companyPhone}</div>
+                ${company.taxId ? `<div class="company-info">NPWP Perusahaan: ${company.taxId}</div>` : ''}
+              </div>
+              <div class="doc-title">
+                <h1>${docTypeName}</h1>
+                <table class="meta-table">
+                  <tr>
+                    <td class="meta-label">No. Dokumen:</td>
+                    <td class="meta-value">${docId}</td>
+                  </tr>
+                  <tr>
+                    <td class="meta-label">No. Referensi:</td>
+                    <td class="meta-value">${reference}</td>
+                  </tr>
+                  <tr>
+                    <td class="meta-label">Tanggal Surat:</td>
+                    <td class="meta-value">${issueDate}</td>
+                  </tr>
+                  ${dueDate ? `<tr><td class="meta-label">Jatuh Tempo:</td><td class="meta-value">${dueDate}</td></tr>` : ''}
+                </table>
+              </div>
+            </div>
+
+            <div class="info-grid">
+              <div class="info-block">
+                <div class="label">${isSales ? 'Kepada (Customer / Pembeli):' : 'Dari (Distributor / Supplier):'}</div>
+                <p style="font-weight: 800; font-size: 14px; color: #0f172a;">${pName}</p>
+                <p>${pAddress}</p>
+                ${pNpwp ? `<p style="font-family: monospace; font-size: 11px; color: #475569;">NPWP: ${pNpwp}</p>` : ''}
+              </div>
+              <div class="info-block">
+                <div class="label">Informasi Transaksi:</div>
+                <p><strong>Status Transaksi:</strong> ${docToPrint ? (docToPrint.status || 'Aktif') : 'Resmi Tercatat'}</p>
+                <p style="font-size: 11px; color: #64748b; margin-top: 6px;">
+                  Dokumen resmi ini diterbitkan secara elektronik dan mengikat sebagai bukti transaksi legal.
+                </p>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 8px; font-size: 12px; color: #334155;">
+              <span style="color: #64748b; font-weight: 500;">No. Referensi:</span> <span style="font-weight: 600; color: #0f172a;">${reference}</span>
+            </div>
+
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th style="width: 40px;" class="text-center">No</th>
+                  <th>Deskripsi / Item Barang</th>
+                  <th style="width: 80px;" class="text-center">Qty</th>
+                  <th style="width: 140px;" class="text-right">Harga Satuan (Rp)</th>
+                  <th style="width: 140px;" class="text-right">Total (Rp)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsList.length > 0 ? itemsList.map((it: any, idx: number) => `
+                  <tr>
+                    <td class="text-center">${idx + 1}</td>
+                    <td><strong>${it.description || it.name || it.productId || 'Item Baris'}</strong></td>
+                    <td class="text-center">${it.qty || 1}</td>
+                    <td class="text-right">${typeof it.price === 'number' ? it.price.toLocaleString('id-ID') : formatAmount(it.price || 0)}</td>
+                    <td class="text-right">${typeof (it.qty * it.price) === 'number' ? ((it.qty || 1) * (it.price || 0)).toLocaleString('id-ID') : formatAmount((it.qty || 1) * (it.price || 0))}</td>
+                  </tr>
+                `).join('') : `
+                  <tr>
+                    <td colspan="5" class="text-center" style="padding: 20px; color: #64748b;">
+                      Detail transaksi tercatat resmi dalam sistem ERP.
+                    </td>
+                  </tr>
+                `}
+              </tbody>
+            </table>
+
+            <div class="summary-container">
+              <div class="notes-box">
+                <p style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">Catatan / Syarat Pembayaran:</p>
+                <p>${messageNotes || 'Pembayaran dilakukan secara resmi sesuai termin yang disepakati.'}</p>
+              </div>
+              <div class="total-box">
+                <div class="total-row grand">
+                  <span>TOTAL DOKUMEN:</span>
+                  <span>Rp ${typeof totalAmt === 'number' ? totalAmt.toLocaleString('id-ID') : totalAmt}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="signatures">
+              <div class="sig-box">
+                <p>Hormat Kami,</p>
+                <div class="sig-line">${company.companyName}</div>
+              </div>
+              <div class="sig-box">
+                <p>Diterima / Disetujui Oleh,</p>
+                <div class="sig-line">${pName}</div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+    };
+
     const renderInvoicePreview = () => {
       const company = getCompanySettings();
       const partners = getStoredPartners();
@@ -1964,8 +2264,11 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                 }`}>
                   {currentStatus}
                 </span>
-                <p className="text-[13px] font-bold text-gray-900 mb-2">{invoiceNo || 'INV-2026-001'}</p>
+                <p className="text-[13px] font-bold text-gray-900 mb-1">{invoiceNo || 'INV-2026-001'}</p>
                 <div className="text-[12px] text-gray-500 space-y-0.5">
+                  {refStr && (
+                    <p>No. Ref: {refStr}</p>
+                  )}
                   <p>Issue Date: {formatPreviewDate(transDate)}</p>
                   <p>Due Date: {formatPreviewDate(dueDateStr)}</p>
                 </div>
@@ -1984,19 +2287,26 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
             {/* Separator */}
             <div className="h-px w-full bg-gray-100 mb-8" />
 
-            {/* Recipient / Partner Details */}
+            {/* Recipient / Partner Details & Transaction Reference */}
             <div className="grid grid-cols-2 gap-8 mb-8">
               <div>
                 <p className="text-[12px] text-gray-500 mb-2">{isSales ? 'Bill to / Customer' : 'Bill from / Distributor'}</p>
                 <p className="text-[13px] font-bold text-gray-900 mb-1">{vendorId || (isSales ? 'Direct Retail Client' : 'Distributor')}</p>
                 <p className="text-[12px] text-gray-500">{partnerAddress}</p>
+                {currentPartnerObj?.npwp && currentPartnerObj.npwp !== '-' && (
+                  <p className="text-[11px] text-gray-500 mt-1 font-mono">NPWP: {currentPartnerObj.npwp}</p>
+                )}
               </div>
               <div>
+                <p className="text-[12px] text-gray-500 mb-1">Informasi Transaksi</p>
+                <p className="text-[12px] text-gray-500 mb-2">
+                  No. Referensi: {refStr || '-'}
+                </p>
                 {partnerEmail && (
-                  <>
-                    <p className="text-[12px] text-gray-500 mb-2">Contact email address</p>
-                    <p className="text-[13px] font-bold text-gray-900">{partnerEmail}</p>
-                  </>
+                  <div>
+                    <p className="text-[12px] text-gray-500 mb-0.5">Email Kontak</p>
+                    <p className="text-[12px] font-medium text-gray-800">{partnerEmail}</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -2063,6 +2373,26 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
           {/* RIGHT COLUMN: Action panel & Context */}
           <div className="lg:col-span-4 space-y-6 text-left font-sans">
             
+            {/* Print / Export Document Action Box */}
+            <div className="bg-[#141517] border border-[#2A2A2A] rounded-xl p-5 shadow-xl flex items-center justify-between gap-4">
+              <div className="text-left">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Printer size={16} className="text-[#EA580C]" /> Cetak Surat Resmi
+                </h3>
+                <p className="text-xs text-[#909090] mt-1">
+                  Cetak atau ekspor PDF lengkap dengan <span className="text-white font-medium">No. Referensi ({refStr || 'PO/Ref'})</span> &amp; tanda tangan.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handlePrintDocument()}
+                className="px-4 py-2 bg-[#EA580C] hover:bg-[#d44d05] text-white text-xs font-semibold rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer shadow-lg shadow-[#EA580C]/20 active:scale-95"
+              >
+                <Printer size={14} />
+                <span>Cetak Surat</span>
+              </button>
+            </div>
+
             {/* Document Activity Logs */}
             <div className="bg-[#141517] border border-[#2A2A2A] rounded-xl p-6 shadow-xl">
               <h3 className="text-sm font-bold text-white mb-5 flex items-center gap-2">
@@ -5222,6 +5552,9 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                             {quickPreviewInvoice.type || (isSales ? 'Sales' : 'Purchase')}
                           </span>
                           <p className="text-xs font-bold text-gray-900">{quickPreviewInvoice.id}</p>
+                          {quickPreviewInvoice.ref && (
+                            <p className="text-[11px] text-gray-500 mt-0.5">No. Ref: {quickPreviewInvoice.ref}</p>
+                          )}
                           <p className="text-[11px] text-gray-500 mt-0.5">Tanggal: {quickPreviewInvoice.date}</p>
                           {quickPreviewInvoice.due && (
                             <p className="text-[11px] text-gray-500">Jatuh Tempo: {quickPreviewInvoice.due}</p>
@@ -5232,13 +5565,12 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                   })()}
 
                   {/* Partner Info */}
-                  <div className="grid grid-cols-2 gap-4 mb-5 text-xs">
+                  <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
                     <div>
                       <p className="text-[11px] text-gray-500 mb-1">
                         {isSales ? 'Bill to / Customer' : 'Bill from / Distributor'}
                       </p>
                       <p className="font-bold text-gray-900">{quickPreviewInvoice.partnerName || quickPreviewInvoice.distributor || '-'}</p>
-                      <p className="text-gray-500 text-[11px] mt-0.5">Ref: {quickPreviewInvoice.ref || '-'}</p>
                     </div>
                     <div>
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Total Document</p>
@@ -5248,6 +5580,13 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                       )}
                     </div>
                   </div>
+
+                  {/* Reference (Plain text directly above table) */}
+                  {quickPreviewInvoice.ref && (
+                    <div className="mb-2 text-[11px] text-gray-700 font-medium">
+                      <span className="text-gray-500 font-normal">No. Referensi:</span> <span className="font-semibold text-gray-900">{quickPreviewInvoice.ref}</span>
+                    </div>
+                  )}
 
                   {/* Line items if available */}
                   {quickPreviewInvoice.items && quickPreviewInvoice.items.length > 0 ? (
@@ -5288,18 +5627,28 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                 >
                   Tutup Preview
                 </button>
-                <button 
-                  type="button"
-                  onClick={() => {
-                    const inv = quickPreviewInvoice;
-                    setQuickPreviewInvoice(null);
-                    handleEditInvoice(inv);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#E87A5D] hover:bg-[#d46b4f] rounded-lg transition-colors cursor-pointer shadow-lg shadow-[#E87A5D]/20"
-                >
-                  <ExternalLink size={14} />
-                  Buka Dokumen Lengkap
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => handlePrintDocument(quickPreviewInvoice)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#2A2B30] hover:bg-[#34363F] border border-[#3A3D4A] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Printer size={14} className="text-[#EA580C]" />
+                    <span>Cetak Surat</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const inv = quickPreviewInvoice;
+                      setQuickPreviewInvoice(null);
+                      handleEditInvoice(inv);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#E87A5D] hover:bg-[#d46b4f] rounded-lg transition-colors cursor-pointer shadow-lg shadow-[#E87A5D]/20"
+                  >
+                    <ExternalLink size={14} />
+                    Buka Dokumen Lengkap
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -5432,6 +5781,17 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                       value={addPartnerEmail}
                       onChange={(e) => setAddPartnerEmail(e.target.value)}
                       placeholder="e.g. kontak@sumbermakmur.com"
+                      className="w-full h-10 px-3.5 bg-[#121316] border border-[#2B2D38] rounded-xl text-xs text-white focus:outline-none focus:border-[#EA580C] transition-all placeholder:text-[#5E606A]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#A0A2AC] mb-1.5">Nomor NPWP / Tax ID</label>
+                    <input
+                      type="text"
+                      value={addPartnerNpwp}
+                      onChange={(e) => setAddPartnerNpwp(e.target.value)}
+                      placeholder="e.g. 01.234.567.8-012.000"
                       className="w-full h-10 px-3.5 bg-[#121316] border border-[#2B2D38] rounded-xl text-xs text-white focus:outline-none focus:border-[#EA580C] transition-all placeholder:text-[#5E606A]"
                     />
                   </div>
