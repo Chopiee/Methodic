@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { setHasUnsavedChanges } from '../lib/unsaved';
 import { 
   getStoredAccounts, 
@@ -6,9 +7,13 @@ import {
   addAccountAndPropagate,
   updateAccountAndPropagate,
   getStoredLedger, 
+  getStoredInvoices,
+  getStoredCosts,
   addManualTransaction,
   AccountItem, 
   JournalEntry,
+  InvoiceItem,
+  CostItem,
   getSubCategoriesForCategory,
   subCategoryOptionsMap
 } from '../lib/state';
@@ -37,13 +42,209 @@ import {
   Scale,
   Send,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Eye,
+  Calendar,
+  CreditCard,
+  Layers,
+  Tag,
+  RefreshCw,
+  Clock,
+  ArrowUpRight,
+  ArrowDownRight,
+  ShoppingBag,
+  ShoppingCart,
+  Wallet
 } from 'lucide-react';
+
+export interface UnifiedTransaction {
+  id: string;
+  sourceType: 'Penjualan' | 'Pembelian' | 'Biaya' | 'Jurnal';
+  date: string;
+  formattedDate: string;
+  ref: string;
+  partnerName: string;
+  description: string;
+  amount: number;
+  remaining?: number;
+  status: string;
+  accountMethod: string;
+  debitAccount?: string;
+  creditAccount?: string;
+  items?: any[];
+  originalDoc?: any;
+}
+
+const buildUnifiedTransactions = (): UnifiedTransaction[] => {
+  const invoices = getStoredInvoices();
+  const costs = getStoredCosts();
+  const ledger = getStoredLedger();
+
+  const list: UnifiedTransaction[] = [];
+
+  // 1. Sales & Purchase Invoices
+  if (Array.isArray(invoices)) {
+    invoices.forEach(inv => {
+      const isSales = inv.isSales;
+      const sourceType = isSales ? 'Penjualan' : 'Pembelian';
+      
+      let dateStr = inv.date || '';
+      let formattedDate = inv.date || '-';
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const p0 = parseInt(parts[0], 10);
+          const p1 = parseInt(parts[1], 10);
+          const year = parts[2];
+          if (p0 > 12) {
+            dateStr = `${year}-${String(p1).padStart(2, '0')}-${String(p0).padStart(2, '0')}`;
+          } else {
+            dateStr = `${year}-${String(p0).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+          }
+        }
+      }
+
+      const itemsSummary = inv.items && inv.items.length > 0 
+        ? inv.items.map(i => `${i.name || i.productId} (${i.qty}x)`).join(', ')
+        : (isSales ? 'Penjualan Produk' : 'Pembelian Barang Dagang');
+
+      list.push({
+        id: inv.id,
+        sourceType,
+        date: dateStr,
+        formattedDate,
+        ref: inv.ref || inv.id,
+        partnerName: inv.partnerName || (isSales ? 'Pelanggan Umum' : 'Distributor / Vendor'),
+        description: itemsSummary,
+        amount: inv.total || 0,
+        remaining: inv.remaining,
+        status: inv.status || 'Paid',
+        accountMethod: inv.paymentBank || (inv.remaining === 0 ? 'Kas / Bank (Lunas)' : isSales ? 'Piutang Usaha' : 'Utang Usaha'),
+        debitAccount: isSales ? (inv.paymentBank ? `Bank / Kas (${inv.paymentBank})` : '1100 - Piutang Usaha') : '5100 - HPP / Persediaan',
+        creditAccount: isSales ? '4100 - Penjualan Produk' : (inv.paymentBank ? `Bank / Kas (${inv.paymentBank})` : '2100 - Utang Usaha'),
+        items: inv.items,
+        originalDoc: inv,
+      });
+    });
+  }
+
+  // 2. Costs / Expenses
+  if (Array.isArray(costs)) {
+    costs.forEach(cost => {
+      let dateStr = cost.date || '';
+      let formattedDate = cost.date || '-';
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const p0 = parseInt(parts[0], 10);
+          const p1 = parseInt(parts[1], 10);
+          const year = parts[2];
+          if (p0 > 12) {
+            dateStr = `${year}-${String(p1).padStart(2, '0')}-${String(p0).padStart(2, '0')}`;
+          } else {
+            dateStr = `${year}-${String(p0).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+          }
+        }
+      }
+
+      const debitAccName = cost.lineItems && cost.lineItems[0]?.account ? cost.lineItems[0].account : '6100 - Beban Operasional';
+
+      list.push({
+        id: cost.id,
+        sourceType: 'Biaya',
+        date: dateStr,
+        formattedDate,
+        ref: cost.id,
+        partnerName: cost.penerima || 'Pihak Ketiga / Vendor Operasional',
+        description: cost.desc || cost.memo || 'Beban Operasional',
+        amount: cost.amount || 0,
+        remaining: 0,
+        status: cost.status || 'Paid',
+        accountMethod: cost.dibayarDari || cost.method || 'Bank BCA',
+        debitAccount: debitAccName,
+        creditAccount: cost.dibayarDari || '1130 - Bank BCA',
+        items: cost.lineItems,
+        originalDoc: cost,
+      });
+    });
+  }
+
+  // 3. Manual Journal Ledger entries
+  if (Array.isArray(ledger)) {
+    const ledgerMap: Record<string, { debit?: any; credit?: any }> = {};
+    ledger.forEach(entry => {
+      if (!ledgerMap[entry.id]) {
+        ledgerMap[entry.id] = {};
+      }
+      if (typeof entry.debit === 'number' && entry.debit > 0) {
+        ledgerMap[entry.id].debit = entry;
+      } else if (typeof entry.credit === 'number' && entry.credit > 0) {
+        ledgerMap[entry.id].credit = entry;
+      } else {
+        ledgerMap[entry.id].debit = entry;
+      }
+    });
+
+    Object.keys(ledgerMap).forEach(refId => {
+      const pair = ledgerMap[refId];
+      const mainEntry = pair.debit || pair.credit;
+      if (!mainEntry) return;
+
+      let dateStr = mainEntry.date || '';
+      const amt = typeof pair.debit?.debit === 'number' ? pair.debit.debit : (typeof pair.credit?.credit === 'number' ? pair.credit.credit : 0);
+
+      list.push({
+        id: refId,
+        sourceType: 'Jurnal',
+        date: dateStr,
+        formattedDate: mainEntry.date,
+        ref: refId,
+        partnerName: 'Entri Jurnal Akuntansi',
+        description: mainEntry.description || 'Transaksi Jurnal Manual',
+        amount: amt,
+        remaining: 0,
+        status: mainEntry.status || 'Posted',
+        accountMethod: `D: ${pair.debit?.account || '-'} | K: ${pair.credit?.account || '-'}`,
+        debitAccount: pair.debit?.account,
+        creditAccount: pair.credit?.account,
+        originalDoc: pair,
+      });
+    });
+  }
+
+  // Sort by date descending
+  list.sort((a, b) => {
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return b.date.localeCompare(a.date);
+  });
+
+  return list;
+};
 
 export function Accounting() {
   const [activeView, setActiveView] = useState<'akun' | 'jurnal' | 'transaksi' | 'laporan_labarugi' | 'laporan_neraca' | 'laporan_aruskas'>('akun');
   const [accounts, setAccounts] = useState<AccountItem[]>(() => getStoredAccounts());
   const [ledger, setLedger] = useState<JournalEntry[]>(() => getStoredLedger());
+  const [unifiedTxList, setUnifiedTxList] = useState<UnifiedTransaction[]>(() => buildUnifiedTransactions());
+
+  // Transaksi View Filter States
+  const [txSearch, setTxSearch] = useState('');
+  const [txCategory, setTxCategory] = useState<'Semua' | 'Penjualan' | 'Pembelian' | 'Biaya' | 'Jurnal'>('Semua');
+  const [txStatus, setTxStatus] = useState<string>('Semua Status');
+  const [txDateRange, setTxDateRange] = useState<string>('Semua Waktu');
+  
+  // Custom Dropdown Open States
+  const [showTxStatusDropdown, setShowTxStatusDropdown] = useState(false);
+  const [showTxDateDropdown, setShowTxDateDropdown] = useState(false);
+  const [showDebitAccountDropdown, setShowDebitAccountDropdown] = useState(false);
+  const [showCreditAccountDropdown, setShowCreditAccountDropdown] = useState(false);
+  const [searchAccountDebit, setSearchAccountDebit] = useState('');
+  const [searchAccountCredit, setSearchAccountCredit] = useState('');
+
+  // Modals
+  const [showManualTxModal, setShowManualTxModal] = useState(false);
+  const [selectedDetailTx, setSelectedDetailTx] = useState<UnifiedTransaction | null>(null);
 
   // Transaksi Manual Form state
   const [txDate, setTxDate] = useState<string>(() => {
@@ -63,12 +264,25 @@ export function Accounting() {
   React.useEffect(() => {
     const handleAccountsUpdate = () => {
       setAccounts(getStoredAccounts());
+      setLedger(getStoredLedger());
+      setUnifiedTxList(buildUnifiedTransactions());
     };
+
     setAccounts(getStoredAccounts());
     setLedger(getStoredLedger());
+    setUnifiedTxList(buildUnifiedTransactions());
 
     window.addEventListener('accounts-updated', handleAccountsUpdate);
-    return () => window.removeEventListener('accounts-updated', handleAccountsUpdate);
+    window.addEventListener('invoices-updated', handleAccountsUpdate);
+    window.addEventListener('costs-updated', handleAccountsUpdate);
+    window.addEventListener('ledger-updated', handleAccountsUpdate);
+
+    return () => {
+      window.removeEventListener('accounts-updated', handleAccountsUpdate);
+      window.removeEventListener('invoices-updated', handleAccountsUpdate);
+      window.removeEventListener('costs-updated', handleAccountsUpdate);
+      window.removeEventListener('ledger-updated', handleAccountsUpdate);
+    };
   }, [activeView]);
   
   // Toolbar states
@@ -294,19 +508,19 @@ export function Accounting() {
   const totalAktivaLancarLainnya = getBal('1400');
   const totalAktivaLancar = totalKasBank + totalPiutang + totalPersediaan + totalAktivaLancarLainnya;
   const totalAktivaTetap = getBal('1500');
-  const totalAktiva = totalAktivaLancar + totalAktivaTetap;
+  const totalAktiva = accounts.find(a => a.code === '1000')?.balance || (totalAktivaLancar + totalAktivaTetap);
 
   const totalHutangUsaha = getBal('2100');
   const totalHutangLainnya = getBal('2200') + getBal('2300') + getBal('2400');
   const totalHutangPanjang = 0;
-  const totalKewajiban = totalHutangUsaha + totalHutangLainnya + totalHutangPanjang;
+  const totalKewajiban = accounts.find(a => a.code === '2000')?.balance || (totalHutangUsaha + totalHutangLainnya + totalHutangPanjang);
 
-  const totalEkuitas = getBal('3100') + getBal('3200') + getBal('3300');
+  const totalEkuitas = accounts.find(a => a.code === '3000')?.balance || (getBal('3100') - getBal('3200') + getBal('3300') + getBal('3400'));
   const totalPendapatan = getBal('4100');
   const totalPendapatanLainnya = getBal('4200');
   const totalHPP = getBal('5100');
   const totalBebanOperasional = accounts
-    .filter(a => a.category === 'Beban' && !a.isHeader)
+    .filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.subCategory === 'Operating Expense') && !a.isHeader)
     .reduce((sum, a) => sum + a.balance, 0);
 
   const labaKotor = totalPendapatan - totalHPP;
@@ -994,7 +1208,7 @@ export function Accounting() {
                   <span>I. Pendapatan Usaha</span>
                   <span>Rp {totalPendapatan.toLocaleString('id-ID')}</span>
                 </div>
-                {accounts.filter(a => a.category === 'Pendapatan').map(acc => (
+                {accounts.filter(a => (a.category === 'Pendapatan' || a.parent === '4000') && !a.isHeader && a.code !== '4200').map(acc => (
                   <div key={acc.code} className="pl-4 flex justify-between text-[#D5D5D5]">
                     <span>{acc.name}</span>
                     <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
@@ -1008,7 +1222,7 @@ export function Accounting() {
                   <span>II. Beban Pokok Penjualan (HPP)</span>
                   <span>(Rp {totalHPP.toLocaleString('id-ID')})</span>
                 </div>
-                {accounts.filter(a => a.category === 'Beban Pokok Penjualan').map(acc => (
+                {accounts.filter(a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.parent === '5000') && !a.isHeader).map(acc => (
                   <div key={acc.code} className="pl-4 flex justify-between text-[#D5D5D5]">
                     <span>{acc.name}</span>
                     <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
@@ -1030,7 +1244,7 @@ export function Accounting() {
                   <span>III. Beban Operasional</span>
                   <span>(Rp {totalBebanOperasional.toLocaleString('id-ID')})</span>
                 </div>
-                {accounts.filter(a => a.category === 'Beban Operational').map(acc => (
+                {accounts.filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.parent === '6000') && !a.isHeader).map(acc => (
                   <div key={acc.code} className="pl-4 flex justify-between text-[#D5D5D5]">
                     <span>{acc.name}</span>
                     <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
@@ -1052,7 +1266,7 @@ export function Accounting() {
                   <span>IV. Pendapatan & Beban Lainnya</span>
                   <span>Rp {totalPendapatanLainnya.toLocaleString('id-ID')}</span>
                 </div>
-                {accounts.filter(a => a.category === 'Pendapatan Lainnya').map(acc => (
+                {accounts.filter(a => a.code === '4200' || a.category === 'Pendapatan Lainnya').map(acc => (
                   <div key={acc.code} className="pl-4 flex justify-between text-[#D5D5D5]">
                     <span>{acc.name}</span>
                     <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
@@ -1093,14 +1307,14 @@ export function Accounting() {
                   <span className="font-semibold text-white block">Aktiva Lancar</span>
                   <div className="pl-2 space-y-1.5 text-[#D5D5D5]">
                     {/* Kas & Bank */}
-                    {accounts.filter(a => a.category === 'Kas & Bank').map(acc => (
+                    {accounts.filter(a => (a.parent === '1100' || a.category === 'Kas & Bank' || a.subCategory === 'Cash' || a.subCategory === 'Bank') && !a.isHeader).map(acc => (
                       <div key={acc.code} className="flex justify-between">
                         <span className="text-[#A0A0A0]">{acc.name}</span>
                         <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
                       </div>
                     ))}
                     {/* Piutang */}
-                    {accounts.filter(a => a.category === 'Akun Piutang').map(acc => (
+                    {accounts.filter(a => (a.code === '1200' || a.category === 'Akun Piutang' || a.subCategory === 'Receivable') && !a.isHeader).map(acc => (
                       <div key={acc.code} className="flex justify-between">
                         <span className="text-[#A0A0A0]">{acc.name}</span>
                         <span className={acc.balance < 0 ? 'text-[#EF4444]' : ''}>
@@ -1109,14 +1323,14 @@ export function Accounting() {
                       </div>
                     ))}
                     {/* Persediaan */}
-                    {accounts.filter(a => a.category === 'Persediaan').map(acc => (
+                    {accounts.filter(a => (a.code === '1300' || a.category === 'Persediaan' || a.subCategory === 'Inventory') && !a.isHeader).map(acc => (
                       <div key={acc.code} className="flex justify-between">
                         <span className="text-[#A0A0A0]">{acc.name}</span>
                         <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
                       </div>
                     ))}
                     {/* Aktiva Lancar Lainnya */}
-                    {accounts.filter(a => a.category === 'Aktiva Lancar Lainnya' && a.balance !== 0).map(acc => (
+                    {accounts.filter(a => (a.code === '1400' || a.category === 'Aktiva Lancar Lainnya' || a.subCategory === 'Prepaid') && !a.isHeader && a.balance !== 0).map(acc => (
                       <div key={acc.code} className="flex justify-between">
                         <span className="text-[#A0A0A0]">{acc.name}</span>
                         <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
@@ -1133,7 +1347,7 @@ export function Accounting() {
                 <div className="space-y-2 pt-2 border-t border-[#2A2A2A]">
                   <span className="font-semibold text-white block">Aktiva Tetap</span>
                   <div className="pl-2 space-y-1.5 text-[#D5D5D5]">
-                    {accounts.filter(a => a.category === 'Aktiva Tetap').map(acc => (
+                    {accounts.filter(a => (a.parent === '1500' || a.category === 'Aktiva Tetap' || a.subCategory === 'Fixed Asset' || a.subCategory === 'Contra Asset') && !a.isHeader).map(acc => (
                       <div key={acc.code} className="flex justify-between">
                         <span className="text-[#A0A0A0]">{acc.name}</span>
                         <span className={acc.balance < 0 ? 'text-[#EF4444]' : ''}>
@@ -1164,19 +1378,7 @@ export function Accounting() {
                 <div className="space-y-2">
                   <span className="font-semibold text-white block">Kewajiban / Hutang</span>
                   <div className="pl-2 space-y-1.5 text-[#D5D5D5]">
-                    {accounts.filter(a => a.category === 'Akun Hutang').map(acc => (
-                      <div key={acc.code} className="flex justify-between">
-                        <span className="text-[#A0A0A0]">{acc.name}</span>
-                        <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
-                      </div>
-                    ))}
-                    {accounts.filter(a => a.category === 'Hutang Lancar Lainnya' && a.balance !== 0).map(acc => (
-                      <div key={acc.code} className="flex justify-between">
-                        <span className="text-[#A0A0A0]">{acc.name}</span>
-                        <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
-                      </div>
-                    ))}
-                    {accounts.filter(a => a.category === 'Hutang Jangka Panjang' && a.balance !== 0).map(acc => (
+                    {accounts.filter(a => (a.category === 'Liabilitas' || a.category === 'Akun Hutang' || a.parent === '2000') && !a.isHeader).map(acc => (
                       <div key={acc.code} className="flex justify-between">
                         <span className="text-[#A0A0A0]">{acc.name}</span>
                         <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
@@ -1193,26 +1395,31 @@ export function Accounting() {
                 <div className="space-y-2 pt-2 border-t border-[#2A2A2A]">
                   <span className="font-semibold text-white block">Ekuitas / Modal</span>
                   <div className="pl-2 space-y-1.5 text-[#D5D5D5]">
-                    {accounts.filter(a => a.category === 'Ekuitas').map(acc => (
+                    {accounts.filter(a => (a.category === 'Ekuitas' || a.parent === '3000') && !a.isHeader).map(acc => (
                       <div key={acc.code} className="flex justify-between">
                         <span className="text-[#A0A0A0]">{acc.name}</span>
-                        <span>Rp {acc.balance.toLocaleString('id-ID')}</span>
+                        <span className={acc.balance < 0 ? 'text-[#EF4444] font-semibold' : ''}>
+                          {acc.balance < 0 ? `-Rp ${Math.abs(acc.balance).toLocaleString('id-ID')}` : `Rp ${acc.balance.toLocaleString('id-ID')}`}
+                        </span>
                       </div>
                     ))}
-                    <div className="flex justify-between text-[#10B981] font-semibold">
-                      <span className="text-[#10B981]">Laba Bersih Tahun Berjalan</span>
-                      <span>Rp {labaBersih.toLocaleString('id-ID')}</span>
-                    </div>
                   </div>
                   <div className="flex justify-between font-bold text-white pt-2 border-t border-[#2A2A2A]/40 text-[11px]">
                     <span>Total Ekuitas</span>
-                    <span>Rp {(totalEkuitas + labaBersih).toLocaleString('id-ID')}</span>
+                    <span className={totalEkuitas < 0 ? 'text-[#EF4444]' : ''}>
+                      {totalEkuitas < 0 ? `-Rp ${Math.abs(totalEkuitas).toLocaleString('id-ID')}` : `Rp ${totalEkuitas.toLocaleString('id-ID')}`}
+                    </span>
                   </div>
                 </div>
 
                 <div className="p-3 bg-[#E87A5D]/10 border border-[#E87A5D]/30 rounded-lg flex justify-between font-bold text-xs text-white">
                   <span>TOTAL PASIVA</span>
-                  <span>Rp {(totalKewajiban + totalEkuitas + labaBersih).toLocaleString('id-ID')}</span>
+                  <span>
+                    {(totalKewajiban + totalEkuitas) < 0 
+                      ? `-Rp ${Math.abs(totalKewajiban + totalEkuitas).toLocaleString('id-ID')}`
+                      : `Rp ${(totalKewajiban + totalEkuitas).toLocaleString('id-ID')}`
+                    }
+                  </span>
                 </div>
               </div>
 

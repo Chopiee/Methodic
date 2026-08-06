@@ -492,13 +492,12 @@ export function Reports() {
   const totalLiabilitiesPanjang = (selectedData.liabilities.panjang as FinancialReportItem[]).reduce((sum, item) => sum + item.amount, 0);
   const totalLiabilities = totalLiabilitiesPendek + totalLiabilitiesPanjang;
 
-  const totalEquityBase = (selectedData.equity as FinancialReportItem[]).reduce((sum, item) => sum + item.amount, 0);
-  // To keep Balance Sheet perfectly balanced: totalAssets = totalLiabilities + totalEquityBase + currentNetProfit
-  // We can treat current net profit as current year earnings
-  const currentYearEarnings = totalAssets - totalLiabilities - totalEquityBase;
-  const totalEquity = totalEquityBase + currentYearEarnings;
+  const totalEquity = (selectedData.equity as FinancialReportItem[]).reduce((sum, item) => sum + item.amount, 0);
 
   const formatRupiah = (num: number) => {
+    if (num < 0) {
+      return '-Rp ' + Math.abs(num).toLocaleString('id-ID');
+    }
     return 'Rp ' + num.toLocaleString('id-ID');
   };
 
@@ -996,14 +995,11 @@ export function Reports() {
                           {selectedData.equity.map((item, i) => (
                             <div key={i} className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                               <span>{item.name}</span>
-                              <span className="text-[#E5E5E5] font-medium">{formatRupiah(item.amount)}</span>
+                              <span className={item.amount < 0 ? "text-[#EF4444] font-semibold" : "text-[#E5E5E5] font-medium"}>
+                                {formatRupiah(item.amount)}
+                              </span>
                             </div>
                           ))}
-                          {/* Laba Bersih Tahun Berjalan */}
-                          <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
-                            <span>Laba Bersih Tahun Berjalan</span>
-                            <span className="text-[#10B981] font-medium">{formatRupiah(currentYearEarnings)}</span>
-                          </div>
                         </div>
                       </div>
 

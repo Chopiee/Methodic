@@ -526,7 +526,7 @@ export interface JournalEntry {
   description: string;
   debit: number | '-';
   credit: number | '-';
-  status: 'Posted' | 'Pending';
+  status: 'Posted' | 'Pending' | 'Draft';
 }
 
 // ================================= DEFAULT DATA =================================
@@ -1394,20 +1394,20 @@ export const getAccountsWithDynamicBalances = (): AccountItem[] => {
   const purchaseInvoices = validInvoices.filter(inv => !inv.isSales && inv.type === 'Invoice');
 
   // Sales Revenue: sum of all actual Sales invoices
-  const totalSalesRevenue = salesInvoices.reduce((sum, inv) => sum + inv.total, 0);
+  let totalSalesRevenue = salesInvoices.reduce((sum, inv) => sum + inv.total, 0);
 
-  // COGS / HPP
+  // Total Purchases from Purchase Invoices
   const totalPurchase = purchaseInvoices.reduce((sum, inv) => sum + inv.total, 0);
-  const dynamicCOGS = totalPurchase > 0 
-    ? totalPurchase 
-    : (totalSalesRevenue > 0 ? Math.round(totalSalesRevenue * 0.428) : 0);
+
+  // COGS / HPP (Purchases of trade goods recognized directly)
+  let dynamicCOGS = totalPurchase;
 
   // Receivables & Payables
-  const dynamicReceivables = salesInvoices.reduce((sum, inv) => sum + inv.remaining, 0);
-  const dynamicPayables = purchaseInvoices.reduce((sum, inv) => sum + inv.remaining, 0);
+  let dynamicReceivables = salesInvoices.reduce((sum, inv) => sum + inv.remaining, 0);
+  let dynamicPayables = purchaseInvoices.reduce((sum, inv) => sum + inv.remaining, 0);
 
-  // Inventory value
-  const dynamicInventoryValue = products.reduce((sum, p) => sum + p.stock * p.hop, 0);
+  // Inventory value set to 0 (unallocated earnings used in equity)
+  let dynamicInventoryValue = 0;
 
   // Operating costs breakdown based on actual Cost transactions
   const expenseBalances: Record<string, number> = {
@@ -1515,15 +1515,120 @@ export const getAccountsWithDynamicBalances = (): AccountItem[] => {
     else balanceKasToko -= amount; // Default Kas di Toko
   });
 
-  const kasDanSetaraKasTotal = balanceKasKecil + balanceKasToko + balanceBca + balanceMandiri;
-  const asetTetapTotal = 0; // Peralatan + Kendaraan - Akumulasi Penyusutan
-  const totalAsetVal = kasDanSetaraKasTotal + dynamicReceivables + dynamicInventoryValue + 0 + asetTetapTotal;
+  // Calculate Ledger (Jurnal Umum / Transaksi Manual) Impact
+  const ledger = getStoredLedger();
+  const validLedger = ledger.filter(entry => entry.status !== 'Draft');
+  const ledgerDeltas: Record<string, number> = {};
 
-  const totalLiabilitasVal = dynamicPayables + costPayables;
-  const totalEkuitasVal = 0;
-  const totalPendapatanVal = totalSalesRevenue + 0;
+  validLedger.forEach(entry => {
+    let code: string | null = null;
+    const match = entry.account.match(/^\d{4}/);
+    if (match) {
+      code = match[0];
+    } else {
+      const accNameLower = entry.account.toLowerCase();
+      if (accNameLower.includes('kas kecil')) code = '1110';
+      else if (accNameLower.includes('kas di toko') || accNameLower.includes('kas toko')) code = '1120';
+      else if (accNameLower.includes('bca')) code = '1130';
+      else if (accNameLower.includes('mandiri')) code = '1140';
+      else if (accNameLower.includes('piutang')) code = '1200';
+      else if (accNameLower.includes('persediaan')) code = '1300';
+      else if (accNameLower.includes('uang muka')) code = '1400';
+      else if (accNameLower.includes('peralatan')) code = '1510';
+      else if (accNameLower.includes('kendaraan')) code = '1520';
+      else if (accNameLower.includes('akumulasi penyusutan')) code = '1530';
+      else if (accNameLower.includes('utang usaha')) code = '2100';
+      else if (accNameLower.includes('utang pajak')) code = '2200';
+      else if (accNameLower.includes('utang gaji')) code = '2300';
+      else if (accNameLower.includes('pendapatan diterima dimuka')) code = '2400';
+      else if (accNameLower.includes('modal')) code = '3100';
+      else if (accNameLower.includes('prive')) code = '3200';
+      else if (accNameLower.includes('laba ditahan')) code = '3300';
+      else if (accNameLower.includes('penjualan')) code = '4100';
+      else if (accNameLower.includes('pendapatan lain')) code = '4200';
+      else if (accNameLower.includes('hpp') || accNameLower.includes('harga pokok')) code = '5100';
+      else if (accNameLower.includes('gaji')) code = '6100';
+      else if (accNameLower.includes('sewa')) code = '6110';
+      else if (accNameLower.includes('listrik') || accNameLower.includes('air')) code = '6120';
+      else if (accNameLower.includes('internet')) code = '6130';
+      else if (accNameLower.includes('iklan') || accNameLower.includes('promosi')) code = '6140';
+      else if (accNameLower.includes('pengiriman')) code = '6150';
+      else if (accNameLower.includes('bank') || accNameLower.includes('admin')) code = '6160';
+      else if (accNameLower.includes('penyusutan')) code = '6170';
+      else if (accNameLower.includes('atk')) code = '6180';
+      else if (accNameLower.includes('lain')) code = '6190';
+    }
+
+    if (!code) return;
+
+    const debitVal = typeof entry.debit === 'number' ? entry.debit : 0;
+    const creditVal = typeof entry.credit === 'number' ? entry.credit : 0;
+
+    let impact = 0;
+    if (code.startsWith('1') || code.startsWith('5') || code.startsWith('6') || code === '3200') {
+      if (code === '1530') {
+        impact = creditVal - debitVal;
+      } else {
+        impact = debitVal - creditVal;
+      }
+    } else {
+      impact = creditVal - debitVal;
+    }
+
+    ledgerDeltas[code] = (ledgerDeltas[code] || 0) + impact;
+  });
+
+  // Apply ledger deltas to account variables
+  balanceKasKecil += (ledgerDeltas['1110'] || 0);
+  balanceKasToko += (ledgerDeltas['1120'] || 0);
+  balanceBca += (ledgerDeltas['1130'] || 0);
+  balanceMandiri += (ledgerDeltas['1140'] || 0);
+
+  dynamicReceivables += (ledgerDeltas['1200'] || 0);
+  dynamicInventoryValue += (ledgerDeltas['1300'] || 0);
+  const uangMukaVal = (ledgerDeltas['1400'] || 0);
+
+  const peralatanVal = (ledgerDeltas['1510'] || 0);
+  const kendaraanVal = (ledgerDeltas['1520'] || 0);
+  const akumulasiPenyusutanVal = (ledgerDeltas['1530'] || 0);
+  const asetTetapTotal = peralatanVal + kendaraanVal - akumulasiPenyusutanVal;
+
+  dynamicPayables += (ledgerDeltas['2100'] || 0);
+  const utangPajakVal = (ledgerDeltas['2200'] || 0);
+  const utangGajiVal = (ledgerDeltas['2300'] || 0);
+  const pendapatanDiterimaDimukaVal = (ledgerDeltas['2400'] || 0);
+
+  const modalPemilikVal = (ledgerDeltas['3100'] || 0);
+  const priveVal = (ledgerDeltas['3200'] || 0);
+  const labaDitahanVal = (ledgerDeltas['3300'] || 0);
+
+  totalSalesRevenue += (ledgerDeltas['4100'] || 0);
+  const otherIncome = (ledgerDeltas['4200'] || 0);
+
+  dynamicCOGS += (ledgerDeltas['5100'] || 0);
+
+  expenseBalances['6100'] += (ledgerDeltas['6100'] || 0);
+  expenseBalances['6110'] += (ledgerDeltas['6110'] || 0);
+  expenseBalances['6120'] += (ledgerDeltas['6120'] || 0);
+  expenseBalances['6130'] += (ledgerDeltas['6130'] || 0);
+  expenseBalances['6140'] += (ledgerDeltas['6140'] || 0);
+  expenseBalances['6150'] += (ledgerDeltas['6150'] || 0);
+  expenseBalances['6160'] += (ledgerDeltas['6160'] || 0);
+  expenseBalances['6170'] += (ledgerDeltas['6170'] || 0);
+  expenseBalances['6180'] += (ledgerDeltas['6180'] || 0);
+  expenseBalances['6190'] += (ledgerDeltas['6190'] || 0);
+
+  const kasDanSetaraKasTotal = balanceKasKecil + balanceKasToko + balanceBca + balanceMandiri;
+  const totalAsetVal = kasDanSetaraKasTotal + dynamicReceivables + dynamicInventoryValue + uangMukaVal + asetTetapTotal;
+
+  const totalLiabilitasVal = dynamicPayables + costPayables + utangPajakVal + utangGajiVal + pendapatanDiterimaDimukaVal;
+  const totalPendapatanVal = totalSalesRevenue + otherIncome;
   const totalHPPVal = dynamicCOGS;
-  const totalBebanOperasionalVal = bebanGajiVal + bebanSewaVal + bebanListrikVal + bebanInternetVal + bebanPromosiVal + bebanPengirimanVal + bebanAdminBankVal + bebanPenyusutanVal + bebanATKVal + bebanLainVal;
+  const totalBebanOperasionalVal = bebanGajiVal + bebanSewaVal + bebanListrikVal + bebanInternetVal + bebanPromosiVal + bebanPengirimanVal + bebanAdminBankVal + bebanPenyusutanVal + bebanATKVal + bebanLainVal +
+    (ledgerDeltas['6100']||0) + (ledgerDeltas['6110']||0) + (ledgerDeltas['6120']||0) + (ledgerDeltas['6130']||0) + (ledgerDeltas['6140']||0) + (ledgerDeltas['6150']||0) + (ledgerDeltas['6160']||0) + (ledgerDeltas['6170']||0) + (ledgerDeltas['6180']||0) + (ledgerDeltas['6190']||0);
+  
+  const unallocatedCurrentEarnings = totalPendapatanVal - totalHPPVal - totalBebanOperasionalVal;
+  const totalEkuitasVal = modalPemilikVal - priveVal + labaDitahanVal + unallocatedCurrentEarnings;
 
   const exactAccountsFromImage: AccountItem[] = [
     // ASET
@@ -1535,24 +1640,25 @@ export const getAccountsWithDynamicBalances = (): AccountItem[] => {
     { code: '1140', name: 'Bank Mandiri', category: 'Aset', subCategory: 'Bank', normalBal: 'Debit', level: 3, parent: '1100', balance: balanceMandiri },
     { code: '1200', name: 'Piutang Usaha', category: 'Aset', subCategory: 'Receivable', normalBal: 'Debit', level: 2, parent: '1000', balance: dynamicReceivables },
     { code: '1300', name: 'Persediaan Barang Dagang', category: 'Aset', subCategory: 'Inventory', normalBal: 'Debit', level: 2, parent: '1000', balance: dynamicInventoryValue },
-    { code: '1400', name: 'Uang Muka Pembelian', category: 'Aset', subCategory: 'Prepaid', normalBal: 'Debit', level: 2, parent: '1000', balance: 0 },
+    { code: '1400', name: 'Uang Muka Pembelian', category: 'Aset', subCategory: 'Prepaid', normalBal: 'Debit', level: 2, parent: '1000', balance: uangMukaVal },
     { code: '1500', name: 'Aset Tetap', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 2, parent: '1000', balance: asetTetapTotal, isHeader: true },
-    { code: '1510', name: 'Peralatan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: 0 },
-    { code: '1520', name: 'Kendaraan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: 0 },
-    { code: '1530', name: 'Akumulasi Penyusutan', category: 'Aset', subCategory: 'Contra Asset', normalBal: 'Kredit', level: 3, parent: '1500', balance: 0 },
+    { code: '1510', name: 'Peralatan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: peralatanVal },
+    { code: '1520', name: 'Kendaraan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: kendaraanVal },
+    { code: '1530', name: 'Akumulasi Penyusutan', category: 'Aset', subCategory: 'Contra Asset', normalBal: 'Kredit', level: 3, parent: '1500', balance: akumulasiPenyusutanVal },
 
     // LIABILITAS
     { code: '2000', name: 'LIABILITAS', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: totalLiabilitasVal, isHeader: true },
     { code: '2100', name: 'Utang Usaha', category: 'Liabilitas', subCategory: 'Current Liability', normalBal: 'Kredit', level: 2, parent: '2000', balance: dynamicPayables + costPayables },
-    { code: '2200', name: 'Utang Pajak', category: 'Liabilitas', subCategory: 'Tax', normalBal: 'Kredit', level: 2, parent: '2000', balance: 0 },
-    { code: '2300', name: 'Utang Gaji', category: 'Liabilitas', subCategory: 'Payroll', normalBal: 'Kredit', level: 2, parent: '2000', balance: 0 },
-    { code: '2400', name: 'Pendapatan Diterima Dimuka', category: 'Liabilitas', subCategory: 'Deferred Revenue', normalBal: 'Kredit', level: 2, parent: '2000', balance: 0 },
+    { code: '2200', name: 'Utang Pajak', category: 'Liabilitas', subCategory: 'Tax', normalBal: 'Kredit', level: 2, parent: '2000', balance: utangPajakVal },
+    { code: '2300', name: 'Utang Gaji', category: 'Liabilitas', subCategory: 'Payroll', normalBal: 'Kredit', level: 2, parent: '2000', balance: utangGajiVal },
+    { code: '2400', name: 'Pendapatan Diterima Dimuka', category: 'Liabilitas', subCategory: 'Deferred Revenue', normalBal: 'Kredit', level: 2, parent: '2000', balance: pendapatanDiterimaDimukaVal },
 
     // EKUITAS
     { code: '3000', name: 'EKUITAS', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: totalEkuitasVal, isHeader: true },
-    { code: '3100', name: 'Modal Pemilik', category: 'Ekuitas', subCategory: 'Capital', normalBal: 'Kredit', level: 2, parent: '3000', balance: 0 },
-    { code: '3200', name: 'Prive', category: 'Ekuitas', subCategory: 'Drawing', normalBal: 'Debit', level: 2, parent: '3000', balance: 0 },
-    { code: '3300', name: 'Laba Ditahan', category: 'Ekuitas', subCategory: 'Retained Earnings', normalBal: 'Kredit', level: 2, parent: '3000', balance: 0 },
+    { code: '3100', name: 'Modal Pemilik', category: 'Ekuitas', subCategory: 'Capital', normalBal: 'Kredit', level: 2, parent: '3000', balance: modalPemilikVal },
+    { code: '3200', name: 'Prive', category: 'Ekuitas', subCategory: 'Drawing', normalBal: 'Debit', level: 2, parent: '3000', balance: priveVal },
+    { code: '3300', name: 'Laba Ditahan', category: 'Ekuitas', subCategory: 'Retained Earnings', normalBal: 'Kredit', level: 2, parent: '3000', balance: labaDitahanVal },
+    { code: '3400', name: 'Penghasilan belum teralokasi pada tahun terkini', category: 'Ekuitas', subCategory: 'Current Earnings', normalBal: 'Kredit', level: 2, parent: '3000', balance: unallocatedCurrentEarnings },
 
     // PENDAPATAN
     { code: '4000', name: 'PENDAPATAN', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: totalPendapatanVal, isHeader: true },

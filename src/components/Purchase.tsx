@@ -1713,6 +1713,160 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
     );
   };
 
+  const formatPreviewDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const day = parseInt(parts[2]);
+      const monthIndex = parseInt(parts[1]) - 1;
+      const year = parts[0];
+      if (monthIndex >= 0 && monthIndex < 12) {
+        return `${day} ${months[monthIndex]}, ${year}`;
+      }
+    }
+    return dateStr;
+  };
+
+  const handlePrintDocument = (docToPrint?: any) => {
+    const company = getCompanySettings();
+    const docId = docToPrint ? docToPrint.id : (invoiceNo || 'INV-2026-001');
+    const reference = docToPrint ? (docToPrint.ref || '-') : (refStr || '-');
+    const pName = docToPrint ? (docToPrint.partnerName || docToPrint.distributor || '-') : (vendorId || '-');
+    const dType = docToPrint ? docToPrint.type : newType;
+    const issueDate = docToPrint ? docToPrint.date : (transDate ? formatPreviewDate(transDate) : '-');
+    const dueDate = docToPrint ? docToPrint.due : (dueDateStr ? formatPreviewDate(dueDateStr) : '-');
+    const itemsList = docToPrint 
+      ? (docToPrint.items || []) 
+      : formLineItems.map(it => ({
+          description: it.description || 'Custom Item',
+          qty: it.qty || 1,
+          price: it.price || 0
+        }));
+    const totalAmt = docToPrint ? (docToPrint.total || 0) : calculateGrandTotal();
+
+    const formattedItems = itemsList.map((item: any, idx: number) => `
+      <tr style="border-bottom: 1px solid #E5E7EB;">
+        <td style="padding: 12px 16px; text-align: center; color: #6B7280; font-size: 12px;">${idx + 1}</td>
+        <td style="padding: 12px 16px; font-weight: 600; color: #111827; font-size: 13px;">${item.name || item.description || 'Produk/Layanan'}</td>
+        <td style="padding: 12px 16px; text-align: center; color: #374151; font-size: 13px;">${item.qty || 1}</td>
+        <td style="padding: 12px 16px; text-align: right; color: #374151; font-size: 13px;">Rp ${((item.price || 0)).toLocaleString('id-ID')}</td>
+        <td style="padding: 12px 16px; text-align: right; font-weight: 600; color: #111827; font-size: 13px;">Rp ${(((item.qty || 1) * (item.price || 0))).toLocaleString('id-ID')}</td>
+      </tr>
+    `).join('');
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Surat Resmi ${dType} - ${docId}</title>
+        <meta charset="utf-8">
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+          body { font-family: 'Plus Jakarta Sans', sans-serif; background: #FFF; margin: 0; padding: 40px; color: #111827; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <div style="max-width: 800px; margin: 0 auto; border: 1px solid #E5E7EB; border-radius: 12px; padding: 40px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <!-- Header -->
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #F3F4F6; padding-bottom: 24px; margin-bottom: 24px;">
+            <div>
+              <h1 style="font-size: 24px; font-weight: 800; color: #111827; margin: 0 0 6px 0;">${company.companyName || 'METHODIC ACADEMY'}</h1>
+              <p style="font-size: 12px; color: #6B7280; margin: 0; max-width: 320px; line-height: 1.5;">${company.companyAddress || 'Kawasan Industri Wisma Utama Lt. 5, Jakarta'}</p>
+              <p style="font-size: 12px; color: #6B7280; margin: 4px 0 0 0;">Email: ${company.companyEmail || 'finance@methodic.co.id'} | Telp: ${company.companyPhone || '+62 21 555 1234'}</p>
+            </div>
+            <div style="text-align: right;">
+              <span style="display: inline-block; padding: 4px 12px; background: #FFF7ED; color: #EA580C; font-size: 12px; font-weight: 700; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #FFEDD5; margin-bottom: 8px;">SURAT RESMI ${dType.toUpperCase()}</span>
+              <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0;">#${docId}</h2>
+            </div>
+          </div>
+
+          <!-- Meta Info Grid -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; background: #F9FAFB; padding: 20px; border-radius: 8px; border: 1px solid #F3F4F6;">
+            <div>
+              <p style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; tracking: 0.5px; margin: 0 0 6px 0;">Kepada Yth (${isSales ? 'Pelanggan' : 'Distributor'}):</p>
+              <h3 style="font-size: 15px; font-weight: 700; color: #111827; margin: 0 0 4px 0;">${pName}</h3>
+              <p style="font-size: 12px; color: #4B5563; margin: 0;">Gedung Wisma Utama, Jakarta</p>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <p style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin: 0 0 4px 0;">No. Referensi</p>
+                <p style="font-size: 13px; font-weight: 600; color: #111827; margin: 0;">${reference}</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin: 0 0 4px 0;">Tanggal Terbit</p>
+                <p style="font-size: 13px; font-weight: 600; color: #111827; margin: 0;">${issueDate}</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin: 0 0 4px 0;">Jatuh Tempo</p>
+                <p style="font-size: 13px; font-weight: 600; color: #111827; margin: 0;">${dueDate}</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin: 0 0 4px 0;">Status Pembayaran</p>
+                <p style="font-size: 13px; font-weight: 700; color: #EA580C; margin: 0;">${docToPrint ? (docToPrint.status || 'Aktif') : 'Resmi Tercatat'}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 32px;">
+            <thead>
+              <tr style="background: #F9FAFB; border-bottom: 2px solid #E5E7EB;">
+                <th style="padding: 10px 16px; text-align: center; font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase;">No</th>
+                <th style="padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase;">Deskripsi Produk / Layanan</th>
+                <th style="padding: 10px 16px; text-align: center; font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase;">Qty</th>
+                <th style="padding: 10px 16px; text-align: right; font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase;">Harga Satuan</th>
+                <th style="padding: 10px 16px; text-align: right; font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase;">Total Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${formattedItems}
+            </tbody>
+          </table>
+
+          <!-- Footer Summary & Signatures -->
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 32px;">
+            <div style="max-width: 380px;">
+              <p style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin: 0 0 6px 0;">Catatan & Syarat Pembayaran:</p>
+              <p style="font-size: 12px; color: #6B7280; line-height: 1.6; margin: 0;">Pembayaran dilakukan melalui Transfer Bank Resmi ke Rekening BCA / Mandiri Perusahaan. Dokumen ini sah dan tercatat secara komputerisasi.</p>
+            </div>
+            <div style="min-width: 240px; background: #F9FAFB; padding: 20px; border-radius: 8px; border: 1px solid #F3F4F6;">
+              <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; color: #111827; border-top: 2px solid #E5E7EB; padding-top: 10px;">
+                <span>Total Tagihan</span>
+                <span style="color: #EA580C;">Rp ${totalAmt.toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Signatures -->
+          <div style="display: flex; justify-content: space-between; margin-top: 60px; padding-top: 20px; text-align: center;">
+            <div style="width: 200px;">
+              <p style="font-size: 12px; color: #6B7280; margin-bottom: 60px;">Diterima Oleh,</p>
+              <div style="border-bottom: 1px solid #9CA3AF; width: 100%;"></div>
+              <p style="font-size: 12px; font-weight: 600; color: #111827; margin-top: 6px;">(${pName})</p>
+            </div>
+            <div style="width: 200px;">
+              <p style="font-size: 12px; color: #6B7280; margin-bottom: 60px;">Hormat Kami,</p>
+              <div style="border-bottom: 1px solid #9CA3AF; width: 100%;"></div>
+              <p style="font-size: 12px; font-weight: 600; color: #111827; margin-top: 6px;">(${company.companyName || 'METHODIC TEAM'})</p>
+            </div>
+          </div>
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+    }
+  };
+
   const renderCreateView = () => {
     const renderCustomSingleCalendar = (
       viewDate: Date,
