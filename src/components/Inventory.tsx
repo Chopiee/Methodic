@@ -888,14 +888,6 @@ export function Inventory({ searchQuery = '' }: { searchQuery?: string }) {
               >
                 <ArrowLeft size={18} />
               </button>
-              <div>
-                <span className="text-[10px] font-bold text-white uppercase tracking-widest block mb-0.5">
-                  DOKUMEN LOGISTIK GUDANG
-                </span>
-                <h1 className="text-[18px] font-semibold tracking-tight text-white leading-tight">
-                  Buat Surat Pergerakan Stok Baru
-                </h1>
-              </div>
             </div>
 
             {/* Action Buttons Row (Pill layout matching Purchase.tsx) */}

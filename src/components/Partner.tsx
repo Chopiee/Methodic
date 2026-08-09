@@ -650,18 +650,6 @@ export function Partner({ searchQuery: globalSearchQuery = '' }: { searchQuery?:
               >
                 <ArrowLeft size={18} />
               </button>
-              <div>
-                <span className="text-[10px] font-bold text-white uppercase tracking-widest block mb-0.5">
-                  {editingPartner ? 'EDIT CONTACT' : 'NEW CONTACT'}
-                </span>
-                <h1 className="text-[18px] font-semibold tracking-tight text-white leading-tight">
-                  {editingPartner 
-                    ? `Edit Partner: ${editingPartner.name}` 
-                    : formCategory === 'Distributor' 
-                      ? 'Add New Distributor' 
-                      : 'Add New Customer'}
-                </h1>
-              </div>
             </div>
           </div>
 

@@ -144,6 +144,8 @@ export interface CostItem {
   memo?: string;
   pesan?: string;
   lineItems?: CostLineItem[];
+  customDebitAccount?: string;
+  customCreditAccount?: string;
 }
 
 export interface PartnerItem {
@@ -600,6 +602,60 @@ export const getStoredInvoices = (): InvoiceItem[] => {
 
 export const saveInvoices = (invoices: InvoiceItem[]): void => {
   setStorageItem<InvoiceItem[]>('methodic_invoices_v4', invoices);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('invoices-updated'));
+  }
+};
+
+export const parseInvoiceDueDate = (dueStr: string): Date | null => {
+  if (!dueStr) return null;
+  const str = String(dueStr).trim();
+  if (str.includes('-')) {
+    const parts = str.split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      if (parts[0] > 1000) {
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+      }
+      if (parts[2] > 1000) {
+        return new Date(parts[2], parts[1] - 1, parts[0]);
+      }
+    }
+  }
+  if (str.includes('/')) {
+    const parts = str.split('/').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      if (parts[2] > 1000) {
+        return new Date(parts[2], parts[1] - 1, parts[0]);
+      }
+      if (parts[0] > 1000) {
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+      }
+    }
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+export const isInvoiceOverdueAndUnpaid = (inv: InvoiceItem): boolean => {
+  if (inv.type && inv.type !== 'Invoice') return false;
+
+  const remNum = typeof inv.remaining === 'number'
+    ? inv.remaining
+    : parseFloat(String(inv.remaining || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+  if (remNum <= 0 || inv.status === 'Paid') return false;
+
+  if (inv.status === 'Overdue') return true;
+
+  if (!inv.due) return false;
+  const dueDate = parseInvoiceDueDate(inv.due);
+  if (!dueDate) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dueDate.setHours(0, 0, 0, 0);
+
+  return dueDate < today;
 };
 
 export const getStoredCosts = (): CostItem[] => {
@@ -1201,7 +1257,9 @@ export const syncCostLedger = (cost: CostItem) => {
 
   // Determine Credit Account (Payment Source or Liability)
   let creditAccount = 'Kas di Toko';
-  if (cost.bayarNanti || cost.method === 'Pay Later (A/P)' || cost.method === 'Utang Usaha') {
+  if (cost.customCreditAccount) {
+    creditAccount = cost.customCreditAccount.replace(/^\d+\s*-\s*/, '');
+  } else if (cost.bayarNanti || cost.method === 'Pay Later (A/P)' || cost.method === 'Utang Usaha') {
     creditAccount = 'Utang Usaha';
   } else if (cost.dibayarDari) {
     if (cost.dibayarDari.includes('Kas Kecil')) creditAccount = 'Kas Kecil';
@@ -1224,7 +1282,10 @@ export const syncCostLedger = (cost: CostItem) => {
     cost.lineItems.forEach((item) => {
       const amt = Number(item.amount) || 0;
       if (amt > 0) {
-        const accName = item.account ? (item.account.split(' ').slice(1).join(' ') || item.account) : 'Beban Operasional';
+        let accName = item.account ? (item.account.split(' ').slice(1).join(' ') || item.account) : 'Beban Operasional';
+        if (cost.customDebitAccount && !item.account) {
+           accName = cost.customDebitAccount.replace(/^\d+\s*-\s*/, '');
+        }
         filteredLedger.unshift({
           id: `JV-2026-0${filteredLedger.length + 1}`,
           date: dateFormatted,
@@ -1243,7 +1304,10 @@ export const syncCostLedger = (cost: CostItem) => {
       Marketing: 'Beban Iklan & Promosi',
       Operational: 'Beban Lain-lain'
     };
-    const expenseAcc = accountMap[cost.category] || 'Beban Lain-lain';
+    let expenseAcc = accountMap[cost.category] || 'Beban Lain-lain';
+    if (cost.customDebitAccount) {
+      expenseAcc = cost.customDebitAccount.replace(/^\d+\s*-\s*/, '');
+    }
     filteredLedger.unshift({
       id: `JV-2026-0${filteredLedger.length + 1}`,
       date: dateFormatted,

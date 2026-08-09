@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { getStoredCosts, registerNewCost, deleteCost, getStoredPartners, saveCosts, CostItem, getStoredLedger, getIdPrefixSettings, getStoredAccounts } from '../lib/state';
+import { getStoredCosts, registerNewCost, deleteCost, getStoredPartners, saveCosts, CostItem, getStoredLedger, getIdPrefixSettings, getStoredAccounts, syncCostLedger } from '../lib/state';
 import { setHasUnsavedChanges } from '../lib/unsaved';
 import { 
   HelpCircle, 
@@ -100,6 +100,111 @@ const renderStatusBadge = (status: string) => {
     <span className={`inline-flex items-center px-3.5 py-1 rounded-full text-[12px] font-medium leading-none bg-[#22242C] ${textColorClass}`}>
       {status}
     </span>
+  );
+};
+
+const AccountDropdownCost = ({ value, options, onChange }: any) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number; placeAbove: boolean }>({
+    top: 0,
+    left: 0,
+    width: 200,
+    placeAbove: false,
+  });
+
+  const updatePosition = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const placeAbove = spaceBelow < 200;
+      setCoords({
+        top: placeAbove ? rect.top : rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        placeAbove,
+      });
+    }
+  };
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isOpen) {
+      updatePosition();
+    }
+    setIsOpen(!isOpen);
+  };
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleScrollOrResize = () => {
+      updatePosition();
+    };
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (buttonRef.current && buttonRef.current.contains(target)) return;
+      const portalEl = document.getElementById('account-dropdown-portal-cost');
+      if (portalEl && portalEl.contains(target)) return;
+      setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div className="relative w-full">
+      <button
+        type="button"
+        ref={buttonRef}
+        onClick={handleToggle}
+        className="w-full h-8 px-2.5 bg-[#1C1C1F] border border-[#27272A] hover:border-[#3F3F46] focus:border-[#EA580C] rounded-lg text-xs text-white flex items-center justify-between text-left cursor-pointer transition-colors shadow-sm"
+      >
+        <span className="truncate pr-2 font-medium">{value}</span>
+        <span className="text-[#85858E] text-[9px] flex-shrink-0">▼</span>
+      </button>
+      {isOpen &&
+        createPortal(
+          <div
+            id="account-dropdown-portal-cost"
+            style={{
+              position: 'fixed',
+              top: coords.placeAbove ? 'auto' : `${coords.top + 4}px`,
+              bottom: coords.placeAbove ? `${window.innerHeight - coords.top + 4}px` : 'auto',
+              left: `${coords.left}px`,
+              width: `${Math.max(coords.width, 220)}px`,
+              zIndex: 999999,
+            }}
+            className="bg-[#1C1C1F] border border-[#27272A] rounded-xl shadow-2xl max-h-[180px] overflow-y-auto p-1.5 space-y-0.5 scrollbar-thin"
+          >
+            {options.map((opt: any) => (
+              <button
+                type="button"
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left px-2.5 py-1.5 text-xs text-white hover:bg-[#27272A] rounded-lg transition-colors truncate cursor-pointer font-medium ${
+                  opt.value === value ? 'bg-[#EA580C]/15 text-[#EA580C] font-semibold' : ''
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </div>
   );
 };
 
@@ -493,8 +598,21 @@ export function Cost() {
   const [editingCostId, setEditingCostId] = useState<string | null>(null);
   const [journalModalCost, setJournalModalCost] = useState<CostItem | null>(null);
   const [showAccountingModal, setShowAccountingModal] = useState<boolean>(false);
+  const [costJournalOpenDropdownId, setCostJournalOpenDropdownId] = useState<string | null>(null);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
   const [showThreeDotMenu, setShowThreeDotMenu] = useState<boolean>(false);
+
+  const updateCostAcc = (updatedCost: CostItem) => {
+    const allCosts = getStoredCosts();
+    const index = allCosts.findIndex(c => c.id === updatedCost.id);
+    if (index !== -1) {
+      allCosts[index] = updatedCost;
+      saveCosts(allCosts);
+      setTransactions(allCosts);
+      syncCostLedger(updatedCost);
+      setJournalModalCost(updatedCost);
+    }
+  };
 
   const [pesan, setPesan] = useState('');
   const [showPesan, setShowPesan] = useState(false);
@@ -991,14 +1109,6 @@ export function Cost() {
                 >
                   <ArrowLeft size={18} />
                 </button>
-                <div>
-                  <span className="text-[10px] font-bold text-white uppercase tracking-widest block mb-0.5">
-                    {editingCostId ? 'Edit Expenditure' : 'New Expenditure'}
-                  </span>
-                  <h1 className="text-[18px] font-semibold tracking-tight text-white leading-tight">
-                    {editingCostId ? `Edit Biaya ${editingCostId}` : 'Tambah Biaya Baru'}
-                  </h1>
-                </div>
               </div>
 
               <div className="flex flex-col items-end gap-4">
@@ -2197,140 +2307,119 @@ export function Cost() {
       {/* Modal Jurnal Akuntansi */}
       <AnimatePresence>
         {showAccountingModal && journalModalCost && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowAccountingModal(false)} />
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 lg:p-8 font-sans text-white">
+            <div 
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm cursor-pointer" 
+              onClick={() => setShowAccountingModal(false)} 
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-[#141517] border border-[#2A2A2A] rounded-xl shadow-2xl w-full max-w-2xl relative z-10 overflow-hidden p-6 space-y-5"
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="relative z-10 w-full max-w-3xl bg-[#141416] border border-[#27272A] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
-              <div className="flex justify-between items-center pb-3 border-b border-[#2A2A2A]">
+              {/* Modal Header */}
+              <div className="flex justify-between items-center p-5 border-b border-[#27272A] bg-[#121214]">
                 <div>
-                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                    <BookOpen size={18} className="text-[#EA580C]" />
-                    Jurnal Akuntansi (Buku Besar) - {journalModalCost.id}
+                  <h2 className="text-base font-semibold text-white">
+                    Detail Jurnal Akuntansi
                   </h2>
-                  <p className="text-xs text-[#909090] mt-0.5">
-                    Entri jurnal otomatis berdasarkan akun biaya dan sumber pembayaran
+                  <p className="text-xs text-[#71717A] mt-0.5">
+                    Entri jurnal otomatis untuk pengeluaran <span className="text-[#A1A1AA] font-mono font-medium">{journalModalCost.id}</span>
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowAccountingModal(false)}
-                  className="p-1 hover:bg-[#1C1C1E] rounded-lg transition-colors text-[#909090] hover:text-white cursor-pointer"
+                  className="p-1.5 text-[#A1A1AA] hover:text-white hover:bg-[#27272A] rounded-lg transition-colors cursor-pointer"
+                  title="Tutup Modal"
                 >
                   <X size={16} />
                 </button>
               </div>
 
-              {/* Transaction Summary Header */}
-              <div className="grid grid-cols-3 gap-3 p-3 bg-[#0E0F11] border border-[#2A2A2A] rounded-lg text-xs">
-                <div>
-                  <span className="text-[#808080] block text-[10px] uppercase">Penerima</span>
-                  <span className="text-white font-medium">{journalModalCost.penerima || journalModalCost.desc || '-'}</span>
+              {/* Modal Content */}
+              <div className="p-6 space-y-6 overflow-y-auto max-h-[72vh]">
+                {/* Transaction Summary Header */}
+                <div className="grid grid-cols-3 gap-3 p-4 bg-[#121214] border border-[#27272A] rounded-xl shadow-sm text-xs">
+                  <div>
+                    <span className="text-[#71717A] block text-xs font-medium">Penerima / Keterangan</span>
+                    <span className="text-white font-medium truncate block mt-1">{journalModalCost.penerima || journalModalCost.desc || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#71717A] block text-xs font-medium">Sumber Pembayaran</span>
+                    <span className="text-white font-medium truncate block mt-1">{journalModalCost.dibayarDari || journalModalCost.method || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#71717A] block text-xs font-medium">Total Pengeluaran</span>
+                    <span className="text-[#EA580C] font-sans font-semibold text-sm block mt-1">{formatRupiah(journalModalCost.amount)}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[#808080] block text-[10px] uppercase">Dibayar Dari</span>
-                  <span className="text-white font-medium">{journalModalCost.dibayarDari || journalModalCost.method || '-'}</span>
-                </div>
-                <div>
-                  <span className="text-[#808080] block text-[10px] uppercase">Total Biaya</span>
-                  <span className="text-[#EA580C] font-mono font-bold">{formatRupiah(journalModalCost.amount)}</span>
-                </div>
-              </div>
 
-              {/* Journal Table */}
-              <div className="border border-[#2A2A2A] rounded-lg overflow-hidden bg-[#0A0A0A]">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#141517] border-b border-[#2A2A2A] text-[#909090] font-medium">
-                    <tr>
-                      <th className="py-2.5 px-3">Kode Akun</th>
-                      <th className="py-2.5 px-3">Nama Akun</th>
-                      <th className="py-2.5 px-3">Kategori</th>
-                      <th className="py-2.5 px-3 text-right">Debit (Rp)</th>
-                      <th className="py-2.5 px-3 text-right">Kredit (Rp)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#2A2A2A]/40 text-white">
-                    {(() => {
-                      const ledgerEntries = getStoredLedger().filter(l => l.description.includes(journalModalCost.id));
-                      if (ledgerEntries.length > 0) {
-                        return ledgerEntries.map((l, i) => (
-                          <tr key={i} className="hover:bg-[#141517]">
-                            <td className="py-2.5 px-3 font-mono text-white font-medium">
-                              {l.account.match(/^\d+/)?.[0] || (l.category === 'Expense' ? '6100' : '1120')}
-                            </td>
-                            <td className="py-2.5 px-3 font-medium">{l.account}</td>
-                            <td className="py-2.5 px-3 text-[#909090]">{l.category}</td>
-                            <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-400">
-                              {typeof l.debit === 'number' ? formatRupiah(l.debit) : l.debit}
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-medium text-rose-400">
-                              {typeof l.credit === 'number' ? formatRupiah(l.credit) : l.credit}
-                            </td>
+                {/* Journal Table */}
+                <div className="space-y-5">
+                  <div className="space-y-2.5">
+                    <h3 className="text-xs font-semibold text-white">
+                      Detail Jurnal Akuntansi
+                    </h3>
+                    <div className="border border-[#27272A] rounded-xl overflow-visible bg-[#121214] shadow-sm">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-[#27272A] bg-[#18181B] text-[#A1A1AA] text-[11px] font-semibold">
+                            <th className="py-2.5 px-3.5 rounded-tl-xl">Posisi</th>
+                            <th className="py-2.5 px-3.5">Akun Pilihan</th>
+                            <th className="py-2.5 px-3.5 text-right">Debit</th>
+                            <th className="py-2.5 px-3.5 text-right rounded-tr-xl">Kredit</th>
                           </tr>
-                        ));
-                      }
-
-                      // Reconstruct preview entries if not yet saved in ledger
-                      const previewItems: any[] = [];
-                      if (journalModalCost.lineItems && journalModalCost.lineItems.length > 0) {
-                        journalModalCost.lineItems.forEach((item) => {
-                          const amt = Number(item.amount) || 0;
-                          if (amt > 0) {
-                            previewItems.push({
-                              code: item.account.split(' ')[0] || '6100',
-                              name: item.account.split(' ').slice(1).join(' ') || item.account || 'Beban Operasional',
-                              cat: 'Expense',
-                              debit: amt,
-                              credit: '-'
-                            });
-                          }
-                        });
-                      } else {
-                        previewItems.push({
-                          code: '6190',
-                          name: journalModalCost.desc || 'Beban Lain-lain',
-                          cat: 'Expense',
-                          debit: journalModalCost.amount,
-                          credit: '-'
-                        });
-                      }
-
-                      const creditAcc = journalModalCost.bayarNanti ? 'Utang Usaha' : (journalModalCost.dibayarDari || journalModalCost.method || 'Kas di Toko');
-                      previewItems.push({
-                        code: creditAcc.includes('Mandiri') ? '1140' : creditAcc.includes('BCA') ? '1130' : creditAcc.includes('Kecil') ? '1110' : creditAcc.includes('Utang') ? '2100' : '1120',
-                        name: creditAcc,
-                        cat: journalModalCost.bayarNanti ? 'Liability' : 'Asset',
-                        debit: '-',
-                        credit: journalModalCost.amount
-                      });
-
-                      return previewItems.map((item, i) => (
-                        <tr key={i} className="hover:bg-[#141517]">
-                          <td className="py-2.5 px-3 font-mono text-white font-medium">{item.code}</td>
-                          <td className="py-2.5 px-3 font-medium">{item.name}</td>
-                          <td className="py-2.5 px-3 text-[#909090]">{item.cat}</td>
-                          <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-400">
-                            {typeof item.debit === 'number' ? formatRupiah(item.debit) : item.debit}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-medium text-rose-400">
-                            {typeof item.credit === 'number' ? formatRupiah(item.credit) : item.credit}
-                          </td>
-                        </tr>
-                      ));
-                    })()}
-                  </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                          <tr className="border-b border-[#27272A]/50 text-white hover:bg-[#1C1C1F] transition-colors">
+                            <td className="py-2.5 px-3.5 font-semibold text-emerald-400">Debit (Dr.)</td>
+                            <td className="py-2 px-3.5">
+                              <AccountDropdownCost
+                                value={journalModalCost.customDebitAccount || (journalModalCost.category === 'Procurement' ? '5100 - Harga Pokok Penjualan' : journalModalCost.category === 'Marketing' ? '6100 - Beban Iklan & Promosi' : '6190 - Beban Lain-lain')}
+                                options={allAccounts.filter(a => !a.isHeader).map(a => ({ value: `${a.code} - ${a.name}`, label: `${a.code} - ${a.name}` }))}
+                                onChange={(val: string) => {
+                                  const updated = { ...journalModalCost, customDebitAccount: val };
+                                  updateCostAcc(updated);
+                                }}
+                              />
+                            </td>
+                            <td className="py-2.5 px-3.5 text-right font-sans font-semibold">{formatRupiah(journalModalCost.amount)}</td>
+                            <td className="py-2.5 px-3.5 text-right font-sans text-[#71717A]">-</td>
+                          </tr>
+                          <tr className="text-white hover:bg-[#1C1C1F] transition-colors">
+                            <td className="py-2.5 px-3.5 font-semibold text-rose-400">Kredit (Cr.)</td>
+                            <td className="py-2 px-3.5">
+                              <AccountDropdownCost
+                                value={journalModalCost.customCreditAccount || (journalModalCost.bayarNanti ? '2100 - Utang Usaha' : '1120 - Kas di Toko')}
+                                options={allAccounts.filter(a => !a.isHeader).map(a => ({ value: `${a.code} - ${a.name}`, label: `${a.code} - ${a.name}` }))}
+                                onChange={(val: string) => {
+                                  const updated = { ...journalModalCost, customCreditAccount: val };
+                                  updateCostAcc(updated);
+                                }}
+                              />
+                            </td>
+                            <td className="py-2.5 px-3.5 text-right font-sans text-[#71717A]">-</td>
+                            <td className="py-2.5 px-3.5 text-right font-sans font-semibold">{formatRupiah(journalModalCost.amount)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* Status Badge */}
-              <div className="flex items-center justify-between text-xs bg-[#0E0F11] p-3 rounded-lg border border-[#2A2A2A]">
-                <span className="text-[#808080]">Status Terbaca: <strong className="text-emerald-400 font-semibold">Tersetel ke General Ledger (Buku Besar)</strong></span>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 font-medium">
-                  <CheckCircle size={13} /> Balanced (Debet = Kredit)
-                </span>
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end p-4 border-t border-[#27272A] bg-[#121214]">
+                <button 
+                  type="button"
+                  onClick={() => setShowAccountingModal(false)}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-[#EA580C] hover:bg-[#D97706] rounded-xl transition-colors cursor-pointer shadow-sm"
+                >
+                  Selesai
+                </button>
               </div>
             </motion.div>
           </div>

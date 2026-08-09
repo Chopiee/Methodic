@@ -30,6 +30,8 @@ import {
   Printer, 
   MoreVertical, 
   ChevronDown, 
+  ChevronLeft,
+  ChevronRight,
   X, 
   ArrowLeft,
   Check,
@@ -74,6 +76,92 @@ export interface UnifiedTransaction {
   items?: any[];
   originalDoc?: any;
 }
+
+const parseAnyDate = (str?: string): Date | null => {
+  if (!str) return null;
+  const s = String(str).trim();
+  if (s.includes('-')) {
+    const parts = s.split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      if (parts[0] > 1000) return new Date(parts[0], parts[1] - 1, parts[2]);
+      if (parts[2] > 1000) return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
+  }
+  if (s.includes('/')) {
+    const parts = s.split('/').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      if (parts[2] > 1000) return new Date(parts[2], parts[1] - 1, parts[0]);
+      if (parts[0] > 1000) return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const getMonthName = (date: Date): string => {
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  return months[date.getMonth()];
+};
+
+const getDayName = (date: Date): string => {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return days[date.getDay()];
+};
+
+const formatDateStr = (date: Date): string => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = getMonthName(date);
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
+};
+
+const formatDateInputStr = (date: Date): string => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
+};
+
+const getMonthGrid = (year: number, month: number) => {
+  const firstDay = new Date(year, month, 1);
+  let startDayOfWeek = firstDay.getDay(); 
+  let offset = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+  
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevDaysInMonth = new Date(year, month, 0).getDate();
+  
+  const grid = [];
+  
+  for (let i = offset - 1; i >= 0; i--) {
+    grid.push({
+      dayNum: prevDaysInMonth - i,
+      date: new Date(year, month - 1, prevDaysInMonth - i),
+      isCurrent: false
+    });
+  }
+  
+  for (let d = 1; d <= daysInMonth; d++) {
+    grid.push({
+      dayNum: d,
+      date: new Date(year, month, d),
+      isCurrent: true
+    });
+  }
+  
+  const remaining = 42 - grid.length;
+  for (let d = 1; d <= remaining; d++) {
+    grid.push({
+      dayNum: d,
+      date: new Date(year, month + 1, d),
+      isCurrent: false
+    });
+  }
+  
+  return grid;
+};
 
 const buildUnifiedTransactions = (): UnifiedTransaction[] => {
   const invoices = getStoredInvoices();
@@ -239,6 +327,213 @@ export function Accounting() {
   const [ledger, setLedger] = useState<JournalEntry[]>(() => getStoredLedger());
   const [unifiedTxList, setUnifiedTxList] = useState<UnifiedTransaction[]>(() => buildUnifiedTransactions());
 
+  // Jurnal Umum Filter States
+  const [jurnalSearch, setJurnalSearch] = useState('');
+  const [jurnalStartDate, setJurnalStartDate] = useState('');
+  const [jurnalEndDate, setJurnalEndDate] = useState('');
+
+  // Jurnal Range Date Picker States (Purchase-style)
+  const [jurnalRangeStart, setJurnalRangeStart] = useState<Date>(() => new Date(2026, 0, 1));
+  const [jurnalRangeEnd, setJurnalRangeEnd] = useState<Date>(() => new Date(2026, 11, 31));
+  const [showJurnalDatePopup, setShowJurnalDatePopup] = useState(false);
+  const [jurnalPreset, setJurnalPreset] = useState<string>('This year');
+  const [jurnalTempStart, setJurnalTempStart] = useState<Date | null>(() => new Date(2026, 0, 1));
+  const [jurnalTempEnd, setJurnalTempEnd] = useState<Date | null>(() => new Date(2026, 11, 31));
+  const [jurnalCurrentViewDate, setJurnalCurrentViewDate] = useState<Date>(() => new Date(2026, 0, 1));
+
+  const handleJurnalPresetClick = (preset: string) => {
+    setJurnalPreset(preset);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let start = new Date(today);
+    let end = new Date(today);
+
+    switch (preset) {
+      case 'Today':
+        start = new Date(today);
+        end = new Date(today);
+        break;
+      case 'Yesterday':
+        start = new Date(today);
+        start.setDate(today.getDate() - 1);
+        end = new Date(start);
+        break;
+      case 'This week':
+        const dayOfWeek = today.getDay();
+        start = new Date(today);
+        start.setDate(today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1));
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        break;
+      case 'Last week':
+        const lastWeekToday = new Date(today);
+        lastWeekToday.setDate(today.getDate() - 7);
+        const lastWeekDayOfWeek = lastWeekToday.getDay();
+        start = new Date(lastWeekToday);
+        start.setDate(lastWeekToday.getDate() - lastWeekDayOfWeek + (lastWeekDayOfWeek === 0 ? -6 : 1));
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        break;
+      case 'This month':
+        start = new Date(today.getFullYear(), today.getMonth(), 1);
+        end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        break;
+      case 'Last month':
+        start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        end = new Date(today.getFullYear(), today.getMonth(), 0);
+        break;
+      case 'This year':
+        start = new Date(today.getFullYear(), 0, 1);
+        end = new Date(today.getFullYear(), 11, 31);
+        break;
+      case 'Last year':
+        start = new Date(today.getFullYear() - 1, 0, 1);
+        end = new Date(today.getFullYear() - 1, 11, 31);
+        break;
+      case 'All time':
+        start = new Date(2024, 0, 1);
+        end = new Date(2030, 11, 31);
+        break;
+    }
+    setJurnalTempStart(start);
+    setJurnalTempEnd(end);
+    setJurnalCurrentViewDate(new Date(start.getFullYear(), start.getMonth(), 1));
+  };
+
+  const handleJurnalDayClick = (date: Date) => {
+    setJurnalPreset('');
+    if (!jurnalTempStart || (jurnalTempStart && jurnalTempEnd)) {
+      setJurnalTempStart(date);
+      setJurnalTempEnd(null);
+    } else if (jurnalTempStart && !jurnalTempEnd) {
+      if (date < jurnalTempStart) {
+        setJurnalTempStart(date);
+      } else {
+        setJurnalTempEnd(date);
+      }
+    }
+  };
+
+  const handleJurnalApplyDateRange = () => {
+    if (jurnalTempStart && jurnalTempEnd) {
+      setJurnalRangeStart(jurnalTempStart);
+      setJurnalRangeEnd(jurnalTempEnd);
+    } else if (jurnalTempStart) {
+      setJurnalRangeStart(jurnalTempStart);
+      setJurnalRangeEnd(jurnalTempStart);
+    }
+    setShowJurnalDatePopup(false);
+  };
+
+  const renderJurnalCalendarMonth = (dateObj: Date, isLeft: boolean) => {
+    const year = dateObj.getFullYear();
+    const month = dateObj.getMonth();
+    const grid = getMonthGrid(year, month);
+    const monthName = getMonthName(dateObj);
+
+    const isCellInRange = (d: Date) => {
+      if (!jurnalTempStart) return false;
+      const target = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const s = new Date(jurnalTempStart.getFullYear(), jurnalTempStart.getMonth(), jurnalTempStart.getDate()).getTime();
+      if (!jurnalTempEnd) return target === s;
+      const e = new Date(jurnalTempEnd.getFullYear(), jurnalTempEnd.getMonth(), jurnalTempEnd.getDate()).getTime();
+      return target >= s && target <= e;
+    };
+
+    return (
+      <div className="flex flex-col select-none">
+        <div className="flex items-center justify-between mb-3 px-1">
+          {isLeft ? (
+            <button 
+              type="button"
+              onClick={() => setJurnalCurrentViewDate(new Date(year, month - 1, 1))}
+              className="p-1 text-white hover:text-gray-300 hover:bg-[#181C26] rounded-lg transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+            </button>
+          ) : (
+            <div className="w-6" />
+          )}
+          
+          <span className="text-[13px] font-semibold text-white tracking-tight">
+            {monthName} {year}
+          </span>
+
+          {!isLeft ? (
+            <button 
+              type="button"
+              onClick={() => setJurnalCurrentViewDate(new Date(jurnalCurrentViewDate.getFullYear(), jurnalCurrentViewDate.getMonth() + 1, 1))}
+              className="p-1 text-white hover:text-gray-300 hover:bg-[#181C26] rounded-lg transition-colors cursor-pointer"
+            >
+              <ChevronRight size={16} />
+            </button>
+          ) : (
+            <div className="w-6" />
+          )}
+        </div>
+
+        <div className="grid grid-cols-7 gap-y-1 mb-2 text-center">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+            <span key={day} className="text-[11px] font-medium text-[#808895]">
+              {day}
+            </span>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-y-1">
+          {grid.map((cell, idx) => {
+            const isStart = jurnalTempStart && cell.date.toDateString() === jurnalTempStart.toDateString();
+            const isEnd = jurnalTempEnd && cell.date.toDateString() === jurnalTempEnd.toDateString();
+            const isBetween = jurnalTempStart && jurnalTempEnd && cell.date > jurnalTempStart && cell.date < jurnalTempEnd;
+            const inRange = isStart || isEnd || isBetween;
+
+            const col = idx % 7;
+            const prevInRange = idx > 0 && isCellInRange(grid[idx - 1].date);
+            const nextInRange = idx < grid.length - 1 && isCellInRange(grid[idx + 1].date);
+
+            const isStripStart = inRange && (col === 0 || isStart || !prevInRange);
+            const isStripEnd = inRange && (col === 6 || isEnd || !nextInRange);
+
+            let wrapperClass = "relative h-8 flex items-center justify-center my-[1px]";
+            if (inRange) {
+              wrapperClass += " bg-[#081B33]";
+              if (isStripStart && isStripEnd) {
+                wrapperClass += " rounded-full";
+              } else if (isStripStart) {
+                wrapperClass += " rounded-l-full";
+              } else if (isStripEnd) {
+                wrapperClass += " rounded-r-full";
+              }
+            }
+
+            let btnClass = "w-8 h-8 text-xs font-medium flex items-center justify-center rounded-full transition-all relative z-10 mx-auto";
+            if (isStart || isEnd) {
+              btnClass += " bg-[#EA580C] text-white font-bold shadow-md shadow-orange-500/20";
+            } else if (isBetween) {
+              btnClass += " text-white font-medium hover:bg-[#122F56] cursor-pointer";
+            } else if (cell.isCurrent) {
+              btnClass += " text-white hover:bg-[#181C24] cursor-pointer";
+            } else {
+              btnClass += " text-[#4A505B] hover:text-[#788090] cursor-pointer";
+            }
+
+            return (
+              <div key={idx} className={wrapperClass}>
+                <button 
+                  type="button"
+                  onClick={() => handleJurnalDayClick(cell.date)}
+                  className={btnClass}
+                >
+                  {cell.dayNum}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   // Transaksi View Filter States
   const [txSearch, setTxSearch] = useState('');
   const [txCategory, setTxCategory] = useState<'Semua' | 'Penjualan' | 'Pembelian' | 'Biaya' | 'Jurnal'>('Semua');
@@ -258,6 +553,8 @@ export function Accounting() {
   const [selectedDetailTx, setSelectedDetailTx] = useState<UnifiedTransaction | null>(null);
 
   // Transaksi Manual Form state
+  const [showTxDatePicker, setShowTxDatePicker] = useState(false);
+  const [txCalendarViewDate, setTxCalendarViewDate] = useState<Date>(() => new Date());
   const [txDate, setTxDate] = useState<string>(() => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -271,6 +568,86 @@ export function Accounting() {
   const [txAmount, setTxAmount] = useState<number | string>('');
   const [txDesc, setTxDesc] = useState('');
   const [txSuccessMsg, setTxSuccessMsg] = useState<string | null>(null);
+
+  const handleTxDateSelect = (selectedDate: Date) => {
+    const yyyy = selectedDate.getFullYear();
+    const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(selectedDate.getDate()).padStart(2, '0');
+    setTxDate(`${yyyy}-${mm}-${dd}`);
+    setShowTxDatePicker(false);
+  };
+
+  const renderTxDatePickerCalendar = () => {
+    const year = txCalendarViewDate.getFullYear();
+    const month = txCalendarViewDate.getMonth();
+    const grid = getMonthGrid(year, month);
+    const monthName = getMonthName(txCalendarViewDate);
+    const selectedDateObj = parseAnyDate(txDate);
+
+    return (
+      <div className="absolute top-full left-0 mt-2 z-50 bg-[#121214] border border-[#27272A] rounded-2xl p-4 shadow-2xl w-[300px] select-none font-sans">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <button 
+            type="button"
+            onClick={() => setTxCalendarViewDate(new Date(year, month - 1, 1))}
+            className="p-1 text-white hover:text-gray-300 hover:bg-[#18181B] rounded-lg transition-colors cursor-pointer"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          
+          <span className="text-[13px] font-semibold text-white tracking-tight">
+            {monthName} {year}
+          </span>
+
+          <button 
+            type="button"
+            onClick={() => setTxCalendarViewDate(new Date(year, month + 1, 1))}
+            className="p-1 text-white hover:text-gray-300 hover:bg-[#18181B] rounded-lg transition-colors cursor-pointer"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-y-1 mb-2 text-center">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+            <span key={day} className="text-[11px] font-medium text-[#808895]">
+              {day}
+            </span>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-y-1">
+          {grid.map((cell, idx) => {
+            const isSelected = selectedDateObj && 
+              cell.date.getFullYear() === selectedDateObj.getFullYear() &&
+              cell.date.getMonth() === selectedDateObj.getMonth() &&
+              cell.date.getDate() === selectedDateObj.getDate();
+
+            let btnClass = "w-8 h-8 text-xs font-medium flex items-center justify-center rounded-full transition-all mx-auto ";
+            if (isSelected) {
+              btnClass += "bg-[#EA580C] text-white font-bold shadow-md shadow-orange-500/20";
+            } else if (cell.isCurrent) {
+              btnClass += "text-white hover:bg-[#18181B] cursor-pointer";
+            } else {
+              btnClass += "text-[#4A505B] hover:text-[#788090] cursor-pointer";
+            }
+
+            return (
+              <div key={idx} className="flex justify-center items-center">
+                <button 
+                  type="button"
+                  onClick={() => handleTxDateSelect(cell.date)}
+                  className={btnClass}
+                >
+                  {cell.dayNum}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   React.useEffect(() => {
     const handleAccountsUpdate = () => {
@@ -851,68 +1228,245 @@ export function Accounting() {
       )}
 
       {/* JURNAL UMUM VIEW */}
-      {activeView === 'jurnal' && (
-        <div className="flex-1 p-8 flex flex-col">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-white">Daftar Transaksi Jurnal Umum</h2>
-            <span className="text-xs text-[#808080]">Total {ledger.length} entri terposting</span>
-          </div>
-          <div className="border border-[#2A2A2A] rounded-xl bg-[#0A0A0A] overflow-hidden shadow-xl">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-[#2A2A2A] bg-[#121315]/80 text-[#909090] text-xs font-semibold">
-                  <th className="py-3.5 px-4 w-28">Ref ID</th>
-                  <th className="py-3.5 px-4 w-32">Tanggal</th>
-                  <th className="py-3.5 px-4">Nama Akun</th>
-                  <th className="py-3.5 px-4">Keterangan</th>
-                  <th className="py-3.5 px-4 text-right">Debit</th>
-                  <th className="py-3.5 px-4 text-right">Kredit</th>
-                  <th className="py-3.5 px-4 text-center w-24">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#2A2A2A]/40 text-xs">
-                {ledger.length > 0 ? (
-                  ledger.map((entry, index) => (
-                    <tr key={`${entry.id}-${entry.account}-${index}`} className="hover:bg-[#141517] transition-colors">
-                      <td className="py-3.5 px-4 font-mono text-[#808080]">{entry.id}</td>
-                      <td className="py-3.5 px-4 text-[#D5D5D5]">{entry.date}</td>
-                      <td className="py-3.5 px-4 font-semibold text-white">{entry.account}</td>
-                      <td className="py-3.5 px-4 text-[#A0A0A0]">{entry.description}</td>
-                      <td className="py-3.5 px-4 text-right font-medium text-[#10B981]">
-                        {typeof entry.debit === 'number' && entry.debit > 0 ? `Rp ${entry.debit.toLocaleString('id-ID')}` : '-'}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-medium text-[#EF4444]">
-                        {typeof entry.credit === 'number' && entry.credit > 0 ? `Rp ${entry.credit.toLocaleString('id-ID')}` : '-'}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-                          {entry.status}
-                        </span>
+      {activeView === 'jurnal' && (() => {
+        const filteredLedger = ledger.filter(entry => {
+          if (jurnalSearch.trim()) {
+            const q = jurnalSearch.toLowerCase().trim();
+            const matchesId = entry.id.toLowerCase().includes(q);
+            const matchesAccount = entry.account.toLowerCase().includes(q);
+            const matchesDesc = (entry.description || '').toLowerCase().includes(q);
+            const matchesStatus = (entry.status || '').toLowerCase().includes(q);
+            const matchesDebit = typeof entry.debit === 'number' && entry.debit.toString().includes(q);
+            const matchesCredit = typeof entry.credit === 'number' && entry.credit.toString().includes(q);
+            if (!matchesId && !matchesAccount && !matchesDesc && !matchesStatus && !matchesDebit && !matchesCredit) {
+              return false;
+            }
+          }
+
+          if (jurnalRangeStart || jurnalRangeEnd) {
+            const entryDate = parseAnyDate(entry.date);
+            if (entryDate) {
+              if (jurnalRangeStart) {
+                const start = new Date(jurnalRangeStart);
+                start.setHours(0, 0, 0, 0);
+                if (entryDate < start) return false;
+              }
+              if (jurnalRangeEnd) {
+                const end = new Date(jurnalRangeEnd);
+                end.setHours(23, 59, 59, 999);
+                if (entryDate > end) return false;
+              }
+            }
+          }
+
+          return true;
+        });
+
+        const totalFilteredDebit = filteredLedger.reduce((sum, e) => sum + (typeof e.debit === 'number' ? e.debit : 0), 0);
+        const totalFilteredCredit = filteredLedger.reduce((sum, e) => sum + (typeof e.credit === 'number' ? e.credit : 0), 0);
+
+        return (
+          <div className="flex-1 p-8 flex flex-col space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-white">Daftar Transaksi Jurnal Umum</h2>
+                <p className="text-xs text-[#909090] mt-0.5">
+                  Menampilkan {filteredLedger.length} dari {ledger.length} entri terposting
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-xs bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 px-3 py-1.5 rounded-xl font-medium">
+                  Total Debit: Rp {totalFilteredDebit.toLocaleString('id-ID')}
+                </span>
+                <span className="text-xs bg-[#EF4444]/10 text-[#EF4444] border border-[#EF4444]/20 px-3 py-1.5 rounded-xl font-medium">
+                  Total Kredit: Rp {totalFilteredCredit.toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
+
+            {/* Filter Toolbar: Search Bar & Date Range Picker */}
+            <div className="bg-[#121214] border border-[#27272A] rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+              {/* Search Bar */}
+              <div className="relative flex-1 min-w-[240px]">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#71717A]" />
+                <input
+                  type="text"
+                  placeholder="Cari Ref ID, Nama Akun, Keterangan..."
+                  value={jurnalSearch}
+                  onChange={(e) => setJurnalSearch(e.target.value)}
+                  className="w-full bg-[#18181B] border border-[#27272A] rounded-xl pl-9 pr-8 py-2 text-white placeholder-[#52525B] focus:outline-none focus:border-[#EA580C] transition-colors"
+                />
+                {jurnalSearch && (
+                  <button
+                    onClick={() => setJurnalSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#71717A] hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Date Range Picker (Purchase style) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <div 
+                    className="flex items-center gap-3 cursor-pointer hover:bg-[#18181B] px-3.5 py-2 rounded-xl border border-[#27272A] bg-[#18181B] transition-all shrink-0"
+                    onClick={() => setShowJurnalDatePopup(!showJurnalDatePopup)}
+                  >
+                    <Calendar size={15} className="text-[#EA580C]" />
+                    <div className="flex flex-col justify-center leading-tight shrink-0 text-right">
+                      <span className="text-[12px] font-medium text-white">{getDayName(jurnalRangeStart)}</span>
+                      <span className="text-[11px] text-[#A1A1AA]">{formatDateStr(jurnalRangeStart)}</span>
+                    </div>
+
+                    <div className="text-[18px] font-light text-white tracking-tight leading-none px-0.5 shrink-0">
+                      -
+                    </div>
+
+                    <div className="flex flex-col justify-center leading-tight shrink-0">
+                      <span className="text-[12px] font-medium text-white">{getDayName(jurnalRangeEnd)}</span>
+                      <span className="text-[11px] text-[#A1A1AA]">{formatDateStr(jurnalRangeEnd)}</span>
+                    </div>
+                  </div>
+
+                  {showJurnalDatePopup && (
+                    <div className="absolute top-full right-0 md:left-auto mt-2 w-[600px] bg-[#05070A] border border-[#181C26] rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden font-sans">
+                      <div className="flex flex-1 min-h-[300px]">
+                        {/* Sidebar presets */}
+                        <div className="w-[125px] border-r border-[#141822] p-2 flex flex-col gap-0.5 bg-[#030407]">
+                          {['Today', 'Yesterday', 'This week', 'Last week', 'This month', 'Last month', 'This year', 'Last year', 'All time'].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => handleJurnalPresetClick(preset)}
+                              className={`w-full text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                                jurnalPreset === preset
+                                  ? 'bg-[#EA580C]/20 text-[#EA580C] font-semibold'
+                                  : 'text-[#888E99] hover:bg-[#0E121B] hover:text-white'
+                              }`}
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Calendars side-by-side */}
+                        <div className="flex-1 p-4 grid grid-cols-2 gap-5 bg-[#05070A]">
+                          {renderJurnalCalendarMonth(jurnalCurrentViewDate, true)}
+                          {renderJurnalCalendarMonth(new Date(jurnalCurrentViewDate.getFullYear(), jurnalCurrentViewDate.getMonth() + 1, 1), false)}
+                        </div>
+                      </div>
+
+                      {/* Footer */}
+                      <div className="flex items-center justify-between border-t border-[#141822] px-4 py-3 bg-[#030407]">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex items-center bg-[#090C12] border border-[#1B202D] rounded-lg px-2.5 py-1 text-[11px]">
+                            <span className="text-[#7E8592] mr-1.5 font-sans">Start</span>
+                            <span className="text-white font-sans">{jurnalTempStart ? formatDateInputStr(jurnalTempStart) : 'MM/DD/YYYY'}</span>
+                          </div>
+                          <span className="text-[#5B6270] text-xs font-light">-</span>
+                          <div className="flex items-center bg-[#090C12] border border-[#1B202D] rounded-lg px-2.5 py-1 text-[11px]">
+                            <span className="text-[#7E8592] mr-1.5 font-sans">End</span>
+                            <span className="text-white font-sans">{jurnalTempEnd ? formatDateInputStr(jurnalTempEnd) : 'MM/DD/YYYY'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button 
+                            type="button"
+                            onClick={() => setShowJurnalDatePopup(false)} 
+                            className="px-3.5 py-1.5 border border-[#1B202D] text-[#888E99] hover:text-white hover:bg-[#0E121B] transition-colors rounded-lg text-[11px] font-medium cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={handleJurnalApplyDateRange} 
+                            className="px-3.5 py-1.5 bg-[#EA580C] hover:bg-[#D9694C] text-white transition-colors rounded-lg text-[11px] font-semibold cursor-pointer shadow-lg shadow-orange-500/10"
+                          >
+                            Terapkan
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {(jurnalSearch || jurnalPreset !== 'All time') && (
+                  <button
+                    onClick={() => {
+                      setJurnalSearch('');
+                      handleJurnalPresetClick('All time');
+                      handleJurnalApplyDateRange();
+                    }}
+                    className="px-3 py-2 bg-[#27272A] hover:bg-[#3F3F46] text-[#A1A1AA] hover:text-white rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Reset Filter</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="border border-[#27272A] rounded-2xl bg-[#121214] overflow-hidden shadow-xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#27272A] bg-[#18181B] text-[#8E9097] text-xs font-semibold">
+                    <th className="py-3.5 px-4 w-28">Ref ID</th>
+                    <th className="py-3.5 px-4 w-32">Tanggal</th>
+                    <th className="py-3.5 px-4">Nama Akun</th>
+                    <th className="py-3.5 px-4">Keterangan</th>
+                    <th className="py-3.5 px-4 text-right">Debit</th>
+                    <th className="py-3.5 px-4 text-right">Kredit</th>
+                    <th className="py-3.5 px-4 text-center w-24">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#27272A]/60 text-xs">
+                  {filteredLedger.length > 0 ? (
+                    filteredLedger.map((entry, index) => (
+                      <tr key={`${entry.id}-${entry.account}-${index}`} className="hover:bg-[#18181B] transition-colors">
+                        <td className="py-3.5 px-4 font-mono text-[#A1A1AA]">{entry.id}</td>
+                        <td className="py-3.5 px-4 text-[#D4D4D8]">{entry.date}</td>
+                        <td className="py-3.5 px-4 font-semibold text-white">{entry.account}</td>
+                        <td className="py-3.5 px-4 text-[#A1A1AA]">{entry.description}</td>
+                        <td className="py-3.5 px-4 text-right font-medium text-[#10B981]">
+                          {typeof entry.debit === 'number' && entry.debit > 0 ? `Rp ${entry.debit.toLocaleString('id-ID')}` : '-'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-medium text-[#EF4444]">
+                          {typeof entry.credit === 'number' && entry.credit > 0 ? `Rp ${entry.credit.toLocaleString('id-ID')}` : '-'}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                            {entry.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-xs text-[#71717A]">
+                        Tidak ada transaksi jurnal umum yang cocok dengan filter pencarian.
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="py-12 text-center text-xs text-[#808080]">
-                      Belum ada transaksi jurnal umum terposting.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TRANSAKSI MANUAL VIEW */}
       {activeView === 'transaksi' && (
-        <div className="flex-1 p-8 flex flex-col space-y-6">
+        <div className="flex-1 w-full space-y-6">
           
           {/* Top Banner Alert if Success */}
           {txSuccessMsg && (
             <div className="bg-[#10B981]/10 border border-[#10B981]/30 text-[#10B981] p-4 rounded-xl flex items-center justify-between text-xs font-medium animate-fadeIn">
               <div className="flex items-center gap-2.5">
-                <CheckCircle size={18} className="shrink-0" />
+                <CheckCircle size={18} className="shrink-0 text-[#10B981]" />
                 <span>{txSuccessMsg}</span>
               </div>
               <button 
@@ -924,286 +1478,269 @@ export function Accounting() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="w-full space-y-6">
             
-            {/* Left 2 Cols: Manual Transaction Entry Form */}
-            <div className="lg:col-span-2 bg-[#141517] border border-[#2B2D36] rounded-2xl p-6 shadow-xl space-y-5">
-              <div className="flex items-center justify-between border-b border-[#2B2D36] pb-4">
-                <div>
-                  <h2 className="text-base font-bold text-white flex items-center gap-2">
-                    <Plus size={18} className="text-[#E87A5D]" />
-                    Catat Transaksi Manual
-                  </h2>
-                  <p className="text-xs text-[#909090] mt-0.5">
-                    Masukkan entri jurnal berpasangan (Debit & Kredit) secara manual
-                  </p>
-                </div>
-                <span className="text-[11px] bg-[#E87A5D]/10 text-[#E87A5D] border border-[#E87A5D]/20 px-2.5 py-1 rounded-full font-semibold">
-                  Double Entry
-                </span>
-              </div>
-
-              <form onSubmit={handleManualTxSubmit} className="space-y-4 text-xs">
-                
-                {/* Row 1: Tanggal & Ref ID */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[#A0A0A0] font-medium block mb-1.5">Tanggal Transaksi *</label>
-                    <input 
-                      type="date"
-                      value={txDate}
-                      onChange={(e) => setTxDate(e.target.value)}
-                      className="w-full bg-[#0A0A0A] border border-[#2B2D36] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#E87A5D] transition-colors"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[#A0A0A0] font-medium block mb-1.5">No. Referensi / Bukti (Opsional)</label>
-                    <input 
-                      type="text"
-                      placeholder="Contoh: JV-2026-001 (Auto generated jika kosong)"
-                      value={txRef}
-                      onChange={(e) => setTxRef(e.target.value)}
-                      className="w-full bg-[#0A0A0A] border border-[#2B2D36] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#E87A5D] transition-colors placeholder-[#606060]"
-                    />
-                  </div>
-                </div>
-
-                {/* Row 2: Debit & Credit Accounts */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[#EA580C] font-semibold block mb-1.5 flex items-center justify-between">
-                      <span>Akun DEBIT *</span>
-                      <span className="text-[10px] text-[#808080] font-normal">(Penambahan Aset/Beban)</span>
-                    </label>
-                    <select
-                      value={txDebitCode}
-                      onChange={(e) => setTxDebitCode(e.target.value)}
-                      className="w-full bg-[#0A0A0A] border border-[#EA580C]/40 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#EA580C] transition-colors cursor-pointer"
-                      required
-                    >
-                      <option value="">-- Pilih Akun Debit --</option>
-                      {accounts.filter(a => !a.isHeader).map(acc => (
-                        <option key={acc.code} value={acc.code}>
-                          {acc.code} - {acc.name} ({acc.category})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[#10B981] font-semibold block mb-1.5 flex items-center justify-between">
-                      <span>Akun KREDIT *</span>
-                      <span className="text-[10px] text-[#808080] font-normal">(Pengurangan Kas/Sumber)</span>
-                    </label>
-                    <select
-                      value={txCreditCode}
-                      onChange={(e) => setTxCreditCode(e.target.value)}
-                      className="w-full bg-[#0A0A0A] border border-[#10B981]/40 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#10B981] transition-colors cursor-pointer"
-                      required
-                    >
-                      <option value="">-- Pilih Akun Kredit --</option>
-                      {accounts.filter(a => !a.isHeader).map(acc => (
-                        <option key={acc.code} value={acc.code}>
-                          {acc.code} - {acc.name} ({acc.category})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Row 3: Nominal */}
-                <div>
-                  <label className="text-[#A0A0A0] font-medium block mb-1.5">Jumlah Nominal (Rp) *</label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#808080] font-semibold">Rp</span>
-                    <input 
-                      type="number"
-                      placeholder="0"
-                      value={txAmount}
-                      onChange={(e) => setTxAmount(e.target.value)}
-                      className="w-full bg-[#0A0A0A] border border-[#2B2D36] rounded-xl pl-10 pr-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-[#E87A5D] transition-colors placeholder-[#606060]"
-                      required
-                      min={1}
-                    />
-                  </div>
-                  {Number(txAmount) > 0 && (
-                    <p className="text-[11px] text-[#E87A5D] mt-1 font-mono">
-                      Terbilang: Rp {Number(txAmount).toLocaleString('id-ID')}
-                    </p>
-                  )}
-                </div>
-
-                {/* Row 4: Keterangan / Memo */}
-                <div>
-                  <label className="text-[#A0A0A0] font-medium block mb-1.5">Keterangan Transaksi / Catatan *</label>
-                  <textarea 
-                    rows={3}
-                    placeholder="Contoh: Pembayaran sewa kantor bulan ini via Bank BCA"
-                    value={txDesc}
-                    onChange={(e) => setTxDesc(e.target.value)}
-                    className="w-full bg-[#0A0A0A] border border-[#2B2D36] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#E87A5D] transition-colors placeholder-[#606060]"
-                    required
-                  />
-                </div>
-
-                {/* Submit Actions */}
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#2B2D36]">
+            <form onSubmit={handleManualTxSubmit} className="space-y-4 text-xs">
+              
+              {/* Row 1: Tanggal & Ref ID */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="relative">
+                  <label className="text-[#A1A1AA] font-medium block mb-1.5">Tanggal Transaksi *</label>
                   <button
                     type="button"
                     onClick={() => {
-                      setTxAmount('');
-                      setTxDesc('');
-                      setTxRef('');
-                      setTxDebitCode('');
-                      setTxCreditCode('');
+                      setShowTxDatePicker(!showTxDatePicker);
+                      setShowDebitAccountDropdown(false);
+                      setShowCreditAccountDropdown(false);
                     }}
-                    className="px-4 py-2.5 bg-[#0A0A0A] border border-[#2B2D36] hover:bg-[#1E2026] text-[#D5D5D5] font-semibold rounded-xl transition-colors cursor-pointer"
+                    className="w-full bg-[#18181B] border border-[#27272A] hover:border-[#EA580C]/50 rounded-xl px-3.5 py-2.5 text-white flex items-center justify-between transition-all cursor-pointer text-left"
                   >
-                    Reset Form
+                    <div className="flex items-center gap-2.5">
+                      <Calendar size={15} className="text-[#EA580C]" />
+                      <span className="text-white font-medium">
+                        {(() => {
+                          const d = parseAnyDate(txDate) || new Date();
+                          return `${getDayName(d)}, ${formatDateStr(d)}`;
+                        })()}
+                      </span>
+                    </div>
+                    <ChevronDown size={16} className={`text-[#71717A] transition-transform ${showTxDatePicker ? 'rotate-180' : ''}`} />
                   </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 bg-[#E87A5D] hover:bg-[#D9694C] text-white font-semibold rounded-xl transition-colors cursor-pointer shadow-lg flex items-center gap-2"
-                  >
-                    <Send size={15} />
-                    <span>Posting Transaksi</span>
-                  </button>
+
+                  {showTxDatePicker && renderTxDatePickerCalendar()}
                 </div>
 
-              </form>
-            </div>
-
-            {/* Right Col: Quick Presets & Account Overview */}
-            <div className="space-y-6">
-              
-              {/* Quick Presets Card */}
-              <div className="bg-[#141517] border border-[#2B2D36] rounded-2xl p-5 shadow-xl space-y-3">
-                <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                  <Zap size={15} className="text-[#E87A5D]" />
-                  Template Transaksi Cepat
-                </h3>
-                <p className="text-[11px] text-[#909090]">
-                  Klik salah satu preset di bawah untuk mengisi pasangan akun secara otomatis:
-                </p>
-
-                <div className="space-y-2 pt-1">
-                  {[
-                    { label: 'Beban Gaji Karyawan', debit: '6100', credit: '1130', desc: 'Pembayaran gaji karyawan via Bank BCA' },
-                    { label: 'Beban Sewa Tempat', debit: '6110', credit: '1130', desc: 'Pembayaran sewa kantor/toko via Bank BCA' },
-                    { label: 'Beban Listrik & Air', debit: '6120', credit: '1110', desc: 'Pembayaran tagihan listrik & air via Kas Kecil' },
-                    { label: 'Beban Iklan & Promosi', debit: '6140', credit: '1130', desc: 'Biaya promosi & iklan online via Bank BCA' },
-                    { label: 'Setoran Modal Pemilik', debit: '1130', credit: '3100', desc: 'Setoran modal tambahan ke rekening Bank BCA' },
-                  ].map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setTxDebitCode(preset.debit);
-                        setTxCreditCode(preset.credit);
-                        if (!txDesc) setTxDesc(preset.desc);
-                      }}
-                      className="w-full text-left p-2.5 rounded-xl bg-[#0A0A0A] border border-[#2B2D36] hover:border-[#E87A5D]/50 hover:bg-[#1E2026] transition-all cursor-pointer text-xs group"
-                    >
-                      <div className="font-semibold text-white group-hover:text-[#E87A5D] transition-colors flex items-center justify-between">
-                        <span>{preset.label}</span>
-                        <ArrowRight size={12} className="text-[#808080] group-hover:text-[#E87A5D]" />
-                      </div>
-                      <div className="text-[10px] text-[#808080] mt-0.5 flex items-center gap-1.5 font-mono">
-                        <span className="text-[#EA580C]">D: {preset.debit}</span>
-                        <span>|</span>
-                        <span className="text-[#10B981]">K: {preset.credit}</span>
-                      </div>
-                    </button>
-                  ))}
+                <div>
+                  <label className="text-[#A1A1AA] font-medium block mb-1.5">No. Referensi / Bukti (Opsional)</label>
+                  <input 
+                    type="text"
+                    placeholder="Contoh: JV-2026-001 (Auto generated jika kosong)"
+                    value={txRef}
+                    onChange={(e) => setTxRef(e.target.value)}
+                    className="w-full bg-[#18181B] border border-[#27272A] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#EA580C] focus:ring-1 focus:ring-[#EA580C] transition-all placeholder-[#52525B]"
+                  />
                 </div>
               </div>
 
-              {/* Information Note Card */}
-              <div className="bg-[#141517] border border-[#2B2D36] rounded-2xl p-5 shadow-xl space-y-2 text-xs">
-                <h3 className="font-bold text-white flex items-center gap-2">
-                  <FileText size={15} className="text-[#EA580C]" />
-                  Informasi Integrasi
-                </h3>
-                <p className="text-[#A0A0A0] text-[11px] leading-relaxed">
-                  Setiap transaksi manual yang diposting akan langsung tersimpan di <span className="text-white font-medium">Jurnal Umum</span>, mempengaruhi <span className="text-white font-medium">Neraca</span>, dan otomatis terhitung pada laporan <span className="text-white font-medium">Laba Rugi</span> jika menggunakan akun Beban atau Pendapatan.
-                </p>
+              {/* Row 2: Custom Dropdowns for Debit & Credit Accounts */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* Akun DEBIT Custom Dropdown */}
+                <div className="relative">
+                  <label className="text-[#EA580C] font-semibold block mb-1.5 flex items-center justify-between">
+                    <span>Akun DEBIT *</span>
+                    <span className="text-[10px] text-[#71717A] font-normal">(Penambahan Aset/Beban)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDebitAccountDropdown(!showDebitAccountDropdown);
+                      setShowCreditAccountDropdown(false);
+                    }}
+                    className="w-full bg-[#18181B] border border-[#EA580C]/50 rounded-xl px-3.5 py-2.5 text-white flex items-center justify-between hover:border-[#EA580C] transition-all cursor-pointer text-left"
+                  >
+                    <span className={txDebitCode ? "text-white font-medium" : "text-[#71717A]"}>
+                      {txDebitCode ? (
+                        (() => {
+                          const acc = accounts.find(a => a.code === txDebitCode);
+                          return acc ? `${acc.code} - ${acc.name} (${acc.category})` : txDebitCode;
+                        })()
+                      ) : "-- Pilih Akun Debit --"}
+                    </span>
+                    <ChevronDown size={16} className={`text-[#71717A] transition-transform ${showDebitAccountDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showDebitAccountDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-[#121214] border border-[#27272A] rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-64">
+                      <div className="p-2 border-b border-[#27272A] bg-[#18181B] sticky top-0 z-10">
+                        <div className="relative">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717A]" />
+                          <input
+                            type="text"
+                            placeholder="Cari kode atau nama akun..."
+                            value={searchAccountDebit}
+                            onChange={(e) => setSearchAccountDebit(e.target.value)}
+                            className="w-full bg-[#121214] border border-[#27272A] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-[#52525B] focus:outline-none focus:border-[#EA580C]"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+                      <div className="overflow-y-auto divide-y divide-[#27272A]/40">
+                        {accounts
+                          .filter(a => !a.isHeader)
+                          .filter(a => 
+                            !searchAccountDebit || 
+                            a.code.toLowerCase().includes(searchAccountDebit.toLowerCase()) || 
+                            a.name.toLowerCase().includes(searchAccountDebit.toLowerCase()) ||
+                            (a.category && a.category.toLowerCase().includes(searchAccountDebit.toLowerCase()))
+                          )
+                          .map(acc => (
+                            <button
+                              key={acc.code}
+                              type="button"
+                              onClick={() => {
+                                setTxDebitCode(acc.code);
+                                setShowDebitAccountDropdown(false);
+                                setSearchAccountDebit('');
+                              }}
+                              className={`w-full text-left px-3.5 py-2.5 hover:bg-[#18181B] transition-colors flex items-center justify-between cursor-pointer ${
+                                txDebitCode === acc.code ? 'bg-[#EA580C]/10 border-l-2 border-[#EA580C]' : ''
+                              }`}
+                            >
+                              <div>
+                                <div className="font-semibold text-white text-xs flex items-center gap-2">
+                                  <span className="font-mono text-[#EA580C] bg-[#EA580C]/10 px-1.5 py-0.5 rounded text-[10px]">{acc.code}</span>
+                                  <span>{acc.name}</span>
+                                </div>
+                                <div className="text-[10px] text-[#71717A] mt-0.5">{acc.category}</div>
+                              </div>
+                              {txDebitCode === acc.code && <Check size={14} className="text-[#EA580C]" />}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Akun KREDIT Custom Dropdown */}
+                <div className="relative">
+                  <label className="text-[#10B981] font-semibold block mb-1.5 flex items-center justify-between">
+                    <span>Akun KREDIT *</span>
+                    <span className="text-[10px] text-[#71717A] font-normal">(Pengurangan Kas/Sumber)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreditAccountDropdown(!showCreditAccountDropdown);
+                      setShowDebitAccountDropdown(false);
+                    }}
+                    className="w-full bg-[#18181B] border border-[#10B981]/50 rounded-xl px-3.5 py-2.5 text-white flex items-center justify-between hover:border-[#10B981] transition-all cursor-pointer text-left"
+                  >
+                    <span className={txCreditCode ? "text-white font-medium" : "text-[#71717A]"}>
+                      {txCreditCode ? (
+                        (() => {
+                          const acc = accounts.find(a => a.code === txCreditCode);
+                          return acc ? `${acc.code} - ${acc.name} (${acc.category})` : txCreditCode;
+                        })()
+                      ) : "-- Pilih Akun Kredit --"}
+                    </span>
+                    <ChevronDown size={16} className={`text-[#71717A] transition-transform ${showCreditAccountDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showCreditAccountDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-[#121214] border border-[#27272A] rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-64">
+                      <div className="p-2 border-b border-[#27272A] bg-[#18181B] sticky top-0 z-10">
+                        <div className="relative">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717A]" />
+                          <input
+                            type="text"
+                            placeholder="Cari kode atau nama akun..."
+                            value={searchAccountCredit}
+                            onChange={(e) => setSearchAccountCredit(e.target.value)}
+                            className="w-full bg-[#121214] border border-[#27272A] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-[#52525B] focus:outline-none focus:border-[#10B981]"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+                      <div className="overflow-y-auto divide-y divide-[#27272A]/40">
+                        {accounts
+                          .filter(a => !a.isHeader)
+                          .filter(a => 
+                            !searchAccountCredit || 
+                            a.code.toLowerCase().includes(searchAccountCredit.toLowerCase()) || 
+                            a.name.toLowerCase().includes(searchAccountCredit.toLowerCase()) ||
+                            (a.category && a.category.toLowerCase().includes(searchAccountCredit.toLowerCase()))
+                          )
+                          .map(acc => (
+                            <button
+                              key={acc.code}
+                              type="button"
+                              onClick={() => {
+                                setTxCreditCode(acc.code);
+                                setShowCreditAccountDropdown(false);
+                                setSearchAccountCredit('');
+                              }}
+                              className={`w-full text-left px-3.5 py-2.5 hover:bg-[#18181B] transition-colors flex items-center justify-between cursor-pointer ${
+                                txCreditCode === acc.code ? 'bg-[#10B981]/10 border-l-2 border-[#10B981]' : ''
+                              }`}
+                            >
+                              <div>
+                                <div className="font-semibold text-white text-xs flex items-center gap-2">
+                                  <span className="font-mono text-[#10B981] bg-[#10B981]/10 px-1.5 py-0.5 rounded text-[10px]">{acc.code}</span>
+                                  <span>{acc.name}</span>
+                                </div>
+                                <div className="text-[10px] text-[#71717A] mt-0.5">{acc.category}</div>
+                              </div>
+                              {txCreditCode === acc.code && <Check size={14} className="text-[#10B981]" />}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Row 3: Nominal */}
+              <div>
+                <label className="text-[#A1A1AA] font-medium block mb-1.5">Jumlah Nominal (Rp) *</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#71717A] font-semibold">Rp</span>
+                  <input 
+                    type="number"
+                    placeholder="0"
+                    value={txAmount}
+                    onChange={(e) => setTxAmount(e.target.value)}
+                    className="w-full bg-[#18181B] border border-[#27272A] rounded-xl pl-10 pr-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-[#EA580C] focus:ring-1 focus:ring-[#EA580C] transition-all placeholder-[#52525B]"
+                    required
+                    min={1}
+                  />
+                </div>
+                {Number(txAmount) > 0 && (
+                  <p className="text-[11px] text-[#EA580C] mt-1 font-mono">
+                    Terbilang: Rp {Number(txAmount).toLocaleString('id-ID')}
+                  </p>
+                )}
+              </div>
+
+              {/* Row 4: Keterangan / Memo */}
+              <div>
+                <label className="text-[#A1A1AA] font-medium block mb-1.5">Keterangan Transaksi / Catatan *</label>
+                <textarea 
+                  rows={3}
+                  placeholder="Contoh: Pembayaran sewa kantor bulan ini via Bank BCA"
+                  value={txDesc}
+                  onChange={(e) => setTxDesc(e.target.value)}
+                  className="w-full bg-[#18181B] border border-[#27272A] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#EA580C] focus:ring-1 focus:ring-[#EA580C] transition-all placeholder-[#52525B]"
+                  required
+                />
+              </div>
+
+              {/* Submit Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#27272A]">
                 <button
                   type="button"
-                  onClick={() => setActiveView('jurnal')}
-                  className="mt-2 text-[11px] text-[#EA580C] hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                  onClick={() => {
+                    setTxAmount('');
+                    setTxDesc('');
+                    setTxRef('');
+                    setTxDebitCode('');
+                    setTxCreditCode('');
+                  }}
+                  className="px-4 py-2.5 bg-[#1C1D21] hover:bg-[#25262B] border border-[#27272A] text-[#A1A1AA] hover:text-white font-semibold rounded-xl transition-all cursor-pointer"
                 >
-                  <span>Lihat Seluruh Jurnal Umum</span>
-                  <ArrowRight size={12} />
+                  Reset Form
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-[#EA580C] hover:bg-[#c2410c] text-white font-semibold rounded-xl transition-all cursor-pointer shadow-lg shadow-[#EA580C]/20 flex items-center gap-2 active:scale-95"
+                >
+                  <Send size={15} />
+                  <span>Posting Transaksi</span>
                 </button>
               </div>
 
-            </div>
-
-          </div>
-
-          {/* Recent Manual Transactions Table */}
-          <div className="border border-[#2B2D36] rounded-2xl bg-[#141517] overflow-hidden shadow-xl mt-6">
-            <div className="p-4 bg-[#0E0F11] border-b border-[#2B2D36] flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold text-white">Riwayat Transaksi Jurnal Terbaru</h3>
-                <p className="text-[11px] text-[#808080]">Daftar entri jurnal yang telah terposting</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveView('jurnal')}
-                className="text-xs text-[#E87A5D] hover:underline flex items-center gap-1 font-medium cursor-pointer"
-              >
-                <span>Buka Jurnal Umum Lengkap</span>
-                <ArrowRight size={14} />
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-[#2B2D36] bg-[#0A0A0A] text-[#909090] text-[11px] font-semibold">
-                    <th className="py-3 px-4 w-28">Ref ID</th>
-                    <th className="py-3 px-4 w-32">Tanggal</th>
-                    <th className="py-3 px-4">Nama Akun</th>
-                    <th className="py-3 px-4">Keterangan</th>
-                    <th className="py-3 px-4 text-right">Debit</th>
-                    <th className="py-3 px-4 text-right">Kredit</th>
-                    <th className="py-3 px-4 text-center w-24">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#2B2D36]/60 text-xs">
-                  {ledger.length > 0 ? (
-                    ledger.slice(0, 8).map((entry, idx) => (
-                      <tr key={`${entry.id}-${idx}`} className="hover:bg-[#1E2026]/50 transition-colors">
-                        <td className="py-2.5 px-4 font-mono text-[#E87A5D] font-semibold">{entry.id}</td>
-                        <td className="py-2.5 px-4 text-[#A0A0A0]">{entry.date}</td>
-                        <td className="py-2.5 px-4 font-medium text-white">{entry.account}</td>
-                        <td className="py-2.5 px-4 text-[#A0A0A0] max-w-xs truncate">{entry.description}</td>
-                        <td className="py-2.5 px-4 text-right font-mono text-[#EA580C]">
-                          {typeof entry.debit === 'number' ? `Rp ${entry.debit.toLocaleString('id-ID')}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-4 text-right font-mono text-[#10B981]">
-                          {typeof entry.credit === 'number' ? `Rp ${entry.credit.toLocaleString('id-ID')}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-4 text-center">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-                            {entry.status || 'Posted'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-[#808080]">
-                        Belum ada transaksi di jurnal.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            </form>
           </div>
 
         </div>

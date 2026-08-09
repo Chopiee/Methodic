@@ -25,6 +25,7 @@ import {
   Percent,
   Settings as SettingsIcon
 } from 'lucide-react';
+import { getStoredInvoices, isInvoiceOverdueAndUnpaid } from '../lib/state';
 
 interface NavItemProps {
   icon: React.ElementType;
@@ -40,7 +41,7 @@ const NavItem = ({ icon: Icon, label, badge, active = false, alert = false, coll
   return (
     <div 
       onClick={onClick}
-      className={`flex items-center ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} py-[6px] mx-2 rounded-md cursor-pointer transition-colors ${active ? 'bg-[#2A2B2A] text-white font-medium' : 'hover:bg-[#1A1A1A] text-[#909090] hover:text-white'} ${collapsed ? 'h-9' : ''}`}
+      className={`flex items-center ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} py-[6px] mx-2 rounded-md cursor-pointer transition-colors relative ${active ? 'bg-[#2A2B2A] text-white font-medium' : 'hover:bg-[#1A1A1A] text-[#909090] hover:text-white'} ${collapsed ? 'h-9' : ''}`}
       title={collapsed ? label : undefined}
     >
       <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
@@ -49,9 +50,18 @@ const NavItem = ({ icon: Icon, label, badge, active = false, alert = false, coll
       </div>
       {!collapsed && (
         <div className="flex items-center gap-1.5">
-          {badge && <span className="text-xs text-[#909090]">{badge}</span>}
+          {badge && (
+            <span className="text-[11px] font-semibold text-[#EA580C] bg-[#EA580C]/15 px-2 py-0.5 rounded-full border border-[#EA580C]/20 leading-none">
+              {badge}
+            </span>
+          )}
           {alert && <span className="text-xs font-bold text-[#909090]">!</span>}
         </div>
+      )}
+      {collapsed && badge && (
+        <span className="absolute top-1 right-1 min-w-[15px] h-[15px] text-[9px] font-bold text-white bg-[#EA580C] rounded-full flex items-center justify-center px-0.5">
+          {badge}
+        </span>
       )}
     </div>
   );
@@ -65,6 +75,37 @@ interface SidebarProps {
 export function Sidebar({ activeItem, onSelectItem }: SidebarProps) {
   const [width, setWidth] = React.useState(240);
   const [isResizing, setIsResizing] = React.useState(false);
+  const [purchaseOverdueCount, setPurchaseOverdueCount] = React.useState(0);
+  const [salesOverdueCount, setSalesOverdueCount] = React.useState(0);
+
+  const calculateOverdueCounts = React.useCallback(() => {
+    const invoices = getStoredInvoices();
+    let pCount = 0;
+    let sCount = 0;
+
+    invoices.forEach((inv) => {
+      if (isInvoiceOverdueAndUnpaid(inv)) {
+        if (inv.isSales) {
+          sCount++;
+        } else {
+          pCount++;
+        }
+      }
+    });
+
+    setPurchaseOverdueCount(pCount);
+    setSalesOverdueCount(sCount);
+  }, []);
+
+  React.useEffect(() => {
+    calculateOverdueCounts();
+    window.addEventListener('invoices-updated', calculateOverdueCounts);
+    window.addEventListener('storage', calculateOverdueCounts);
+    return () => {
+      window.removeEventListener('invoices-updated', calculateOverdueCounts);
+      window.removeEventListener('storage', calculateOverdueCounts);
+    };
+  }, [calculateOverdueCounts]);
 
   React.useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -127,14 +168,28 @@ export function Sidebar({ activeItem, onSelectItem }: SidebarProps) {
 
       {/* Group 1 */}
       <div className="flex flex-col gap-[2px] mb-6 overflow-hidden">
-        <NavItem icon={BarChart3} label="Dashboard" badge={collapsed ? undefined : "2"} active={activeItem === 'Dashboard'} collapsed={collapsed} onClick={() => onSelectItem('Dashboard')} />
-        <NavItem icon={Inbox} label="Inbox" badge={collapsed ? undefined : "12"} active={activeItem === 'Inbox'} collapsed={collapsed} onClick={() => onSelectItem('Inbox')} />
+        <NavItem icon={BarChart3} label="Dashboard" active={activeItem === 'Dashboard'} collapsed={collapsed} onClick={() => onSelectItem('Dashboard')} />
+        <NavItem icon={Inbox} label="Inbox" active={activeItem === 'Inbox'} collapsed={collapsed} onClick={() => onSelectItem('Inbox')} />
         <NavItem icon={Sparkles} label="Smart Planning" active={activeItem === 'Smart Planning'} collapsed={collapsed} onClick={() => onSelectItem('Smart Planning')} />
       </div>
 
       <div className="flex flex-col gap-[2px] mb-6 overflow-hidden">
-        <NavItem icon={Flag} label="Purchase" active={activeItem === 'Purchase'} collapsed={collapsed} onClick={() => onSelectItem('Purchase')} />
-        <NavItem icon={CreditCard} label="Sales" alert={!collapsed} active={activeItem === 'Sales'} collapsed={collapsed} onClick={() => onSelectItem('Sales')} />
+        <NavItem 
+          icon={Flag} 
+          label="Purchase" 
+          badge={purchaseOverdueCount > 0 ? String(purchaseOverdueCount) : undefined} 
+          active={activeItem === 'Purchase'} 
+          collapsed={collapsed} 
+          onClick={() => onSelectItem('Purchase')} 
+        />
+        <NavItem 
+          icon={CreditCard} 
+          label="Sales" 
+          badge={salesOverdueCount > 0 ? String(salesOverdueCount) : undefined} 
+          active={activeItem === 'Sales'} 
+          collapsed={collapsed} 
+          onClick={() => onSelectItem('Sales')} 
+        />
         <NavItem icon={TrendingDown} label="Cost" active={activeItem === 'Cost'} collapsed={collapsed} onClick={() => onSelectItem('Cost')} />
         <NavItem icon={Package} label="Product" active={activeItem === 'Product'} collapsed={collapsed} onClick={() => onSelectItem('Product')} />
         <NavItem icon={Warehouse} label="Warehouse" active={activeItem === 'Inventory'} collapsed={collapsed} onClick={() => onSelectItem('Inventory')} />

@@ -610,12 +610,6 @@ export function Product({ searchQuery = '' }: { searchQuery?: string }) {
             >
               <ArrowLeft size={18} />
             </button>
-            <div>
-              <span className="text-[10px] font-bold text-[#EA580C] uppercase tracking-widest block mb-0.5">New Product</span>
-              <h1 className="text-[20px] font-semibold tracking-tight text-white leading-tight">
-                Add New Product
-              </h1>
-            </div>
           </div>
 
           <div className="flex items-center gap-3">

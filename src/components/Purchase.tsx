@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { getStoredInvoices, registerNewInvoice, updateInvoice, deleteInvoice, getStoredPartners, getStoredProducts, saveInvoices, savePartners, saveProducts, getIdPrefixSettings, getNextId, getStoredAccounts, getInvoiceLogs, formatLogTimestamp, DocumentActivityLog, InvoiceItem, getCompanySettings } from '../lib/state';
+import { getStoredInvoices, registerNewInvoice, updateInvoice, deleteInvoice, getStoredPartners, getStoredProducts, saveInvoices, savePartners, saveProducts, getIdPrefixSettings, getNextId, getStoredAccounts, getInvoiceLogs, formatLogTimestamp, DocumentActivityLog, InvoiceItem, getCompanySettings, parseInvoiceDueDate } from '../lib/state';
 import { setHasUnsavedChanges } from '../lib/unsaved';
 import { 
   ChevronDown, Filter, List, LayoutGrid, Kanban, SlidersHorizontal, 
@@ -120,6 +120,13 @@ const formatDateStr = (date: Date): string => {
   const month = getMonthName(date);
   const year = date.getFullYear();
   return `${day} ${month} ${year}`;
+};
+
+const displayFormattedDate = (dateVal?: string): string => {
+  if (!dateVal) return '-';
+  const parsed = parseInvoiceDueDate(dateVal);
+  if (!parsed || isNaN(parsed.getTime())) return dateVal;
+  return formatDateStr(parsed);
 };
 
 const formatDateInputStr = (date: Date): string => {
@@ -300,6 +307,111 @@ const renderStatusBadge = (status: string) => {
   );
 };
 
+const AccountDropdown = ({ value, options, onChange }: any) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number; placeAbove: boolean }>({
+    top: 0,
+    left: 0,
+    width: 200,
+    placeAbove: false,
+  });
+
+  const updatePosition = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const placeAbove = spaceBelow < 200;
+      setCoords({
+        top: placeAbove ? rect.top : rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        placeAbove,
+      });
+    }
+  };
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isOpen) {
+      updatePosition();
+    }
+    setIsOpen(!isOpen);
+  };
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleScrollOrResize = () => {
+      updatePosition();
+    };
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (buttonRef.current && buttonRef.current.contains(target)) return;
+      const portalEl = document.getElementById('account-dropdown-portal-purchase');
+      if (portalEl && portalEl.contains(target)) return;
+      setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div className="relative w-full">
+      <button
+        type="button"
+        ref={buttonRef}
+        onClick={handleToggle}
+        className="w-full h-8 px-2.5 bg-[#1C1C1F] border border-[#27272A] hover:border-[#3F3F46] focus:border-[#EA580C] rounded-lg text-xs text-white flex items-center justify-between text-left cursor-pointer transition-colors shadow-sm"
+      >
+        <span className="truncate pr-2 font-medium">{value}</span>
+        <span className="text-[#85858E] text-[9px] flex-shrink-0">▼</span>
+      </button>
+      {isOpen &&
+        createPortal(
+          <div
+            id="account-dropdown-portal-purchase"
+            style={{
+              position: 'fixed',
+              top: coords.placeAbove ? 'auto' : `${coords.top + 4}px`,
+              bottom: coords.placeAbove ? `${window.innerHeight - coords.top + 4}px` : 'auto',
+              left: `${coords.left}px`,
+              width: `${Math.max(coords.width, 220)}px`,
+              zIndex: 999999,
+            }}
+            className="bg-[#1C1C1F] border border-[#27272A] rounded-xl shadow-2xl max-h-[180px] overflow-y-auto p-1.5 space-y-0.5 scrollbar-thin"
+          >
+            {options.map((opt: any) => (
+              <button
+                type="button"
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left px-2.5 py-1.5 text-xs text-white hover:bg-[#27272A] rounded-lg transition-colors truncate cursor-pointer font-medium ${
+                  opt.value === value ? 'bg-[#EA580C]/15 text-[#EA580C] font-semibold' : ''
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+};
+
 interface PurchaseProps {
   isSales?: boolean;
   key?: string;
@@ -368,6 +480,7 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
   const [showSaveDebitDropdown, setShowSaveDebitDropdown] = useState(false);
   const [showSaveCreditDropdown, setShowSaveCreditDropdown] = useState(false);
   const [paymentDebitAccount, setPaymentDebitAccount] = useState('1130 - Bank BCA');
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [paymentCreditAccount, setPaymentCreditAccount] = useState('1200 - Piutang Usaha');
 
   React.useEffect(() => {
@@ -2521,26 +2634,6 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
 
           {/* RIGHT COLUMN: Action panel & Context */}
           <div className="lg:col-span-4 space-y-6 text-left font-sans">
-            
-            {/* Print / Export Document Action Box */}
-            <div className="bg-[#141517] border border-[#2A2A2A] rounded-xl p-5 shadow-xl flex items-center justify-between gap-4">
-              <div className="text-left">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Printer size={16} className="text-[#EA580C]" /> Cetak Surat Resmi
-                </h3>
-                <p className="text-xs text-[#909090] mt-1">
-                  Cetak atau ekspor PDF lengkap dengan <span className="text-white font-medium">No. Referensi ({refStr || 'PO/Ref'})</span> &amp; tanda tangan.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => handlePrintDocument()}
-                className="px-4 py-2 bg-[#EA580C] hover:bg-[#d44d05] text-white text-xs font-semibold rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer shadow-lg shadow-[#EA580C]/20 active:scale-95"
-              >
-                <Printer size={14} />
-                <span>Cetak Surat</span>
-              </button>
-            </div>
 
             {/* Document Activity Logs */}
             <div className="bg-[#141517] border border-[#2A2A2A] rounded-xl p-6 shadow-xl">
@@ -2683,12 +2776,6 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
             >
               <ArrowLeft size={18} />
             </button>
-            <div>
-              <span className="text-[10px] font-bold text-white uppercase tracking-widest block mb-0.5">{editingInvoiceId ? 'Edit Transaction' : 'New Transaction'}</span>
-              <h1 className="text-[18px] font-semibold tracking-tight text-white leading-tight">
-                {pageTitle()}
-              </h1>
-            </div>
           </div>
 
           <div className="flex flex-col items-end gap-4">
@@ -2698,6 +2785,13 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                 className="flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer"
               >
                 <HelpCircle size={14} /> Guide
+              </button>
+              <button 
+                type="button"
+                onClick={() => handlePrintDocument()}
+                className="flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer"
+              >
+                <Printer size={14} /> Print
               </button>
             </div>
           </div>
@@ -4699,6 +4793,9 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                     </>
                   )}
                   <th className="py-3.5 px-4 font-medium text-[#8E9097] text-[13px]">
+                    <span>Date</span>
+                  </th>
+                  <th className="py-3.5 px-4 font-medium text-[#8E9097] text-[13px]">
                     <span>{activeTab === 'Delivery' ? 'Delivery Date' : 'Due Date'}</span>
                   </th>
                   <th className="py-3.5 px-4 font-medium text-[#8E9097] text-[13px]">
@@ -4722,7 +4819,7 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
               <tbody>
                 {visibleInvoices.length === 0 ? (
                   <tr>
-                    <td colSpan={activeTab === 'Delivery' ? 8 : activeTab === 'Quotation' ? 7 : 8} className="py-12 text-center text-[#8E9097]">
+                    <td colSpan={activeTab === 'Delivery' ? 9 : activeTab === 'Quotation' ? 8 : 9} className="py-12 text-center text-[#8E9097]">
                       <div className="flex flex-col items-center justify-center">
                         <FileText size={36} className="text-[#333] mb-3 animate-pulse" />
                         <p className="text-[13px] text-white font-medium mb-1">No {activeTab}s recorded</p>
@@ -4791,7 +4888,12 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
 
                         {/* Date Column */}
                         <td className="py-4 px-4 text-[13px] text-[#C5C7CE] font-normal">
-                          <span className="text-white text-[13px] font-normal">{formatDateStr(parseDateStr(invoice.date))}</span>
+                          <span className="text-white text-[13px] font-normal">{displayFormattedDate(invoice.date)}</span>
+                        </td>
+
+                        {/* Due Date / Delivery Date Column */}
+                        <td className="py-4 px-4 text-[13px] text-[#C5C7CE] font-normal">
+                          <span className="text-white text-[13px] font-normal">{displayFormattedDate(invoice.due || invoice.date)}</span>
                         </td>
 
                         {/* Status Badge */}
@@ -5363,168 +5465,159 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
           const paidVal = totalVal - remainingVal;
 
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowAccountingModal(false)} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 lg:p-8 font-sans text-white">
+              <div 
+                className="fixed inset-0 bg-black/70 backdrop-blur-sm cursor-pointer" 
+                onClick={() => setShowAccountingModal(false)} 
+              />
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                className="bg-[#141517] border border-[#2A2A2A] rounded-xl shadow-2xl w-full max-w-2xl relative z-10 overflow-hidden"
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="relative z-10 w-full max-w-3xl bg-[#141416] border border-[#27272A] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
               >
-                <div className="flex items-center justify-between p-5 border-b border-[#2A2A2A]">
+                {/* Modal Header */}
+                <div className="flex items-center justify-between p-5 border-b border-[#27272A] bg-[#121214]">
                   <div>
-                    <h2 className="text-lg font-semibold text-white">Detail Jurnal Akuntansi</h2>
-                    <p className="text-xs text-[#909090] mt-0.5">Entri jurnal otomatis untuk dokumen {currentInv.id}</p>
+                    <h2 className="text-base font-semibold text-white">Detail Jurnal Akuntansi</h2>
+                    <p className="text-xs text-[#71717A] mt-0.5">
+                      Entri jurnal otomatis untuk dokumen <span className="text-[#A1A1AA] font-mono font-medium">{currentInv.id}</span>
+                    </p>
                   </div>
                   <button 
+                    type="button"
                     onClick={() => setShowAccountingModal(false)}
-                    className="p-1.5 hover:bg-[#1C1C1E] rounded-lg transition-colors text-[#909090] hover:text-white"
+                    className="p-1.5 text-[#A1A1AA] hover:text-white hover:bg-[#27272A] rounded-lg transition-colors cursor-pointer"
+                    title="Tutup Modal"
                   >
                     <X size={16} />
                   </button>
                 </div>
                 
-                <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+                {/* Modal Content */}
+                <div className="p-6 space-y-6 overflow-y-auto max-h-[72vh]">
                   {/* Summary Stats */}
-                  <div className="grid grid-cols-3 gap-4 bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg p-4">
+                  <div className="grid grid-cols-3 gap-3 bg-[#121214] border border-[#27272A] rounded-xl p-4 shadow-sm">
                     <div>
-                      <span className="text-[11px] text-[#909090] block uppercase tracking-wider font-semibold">Total Tagihan</span>
-                      <span className="text-white text-base font-semibold font-sans mt-1 block">{formatAmount(totalVal)}</span>
+                      <span className="text-xs text-[#71717A] block font-medium">Total Tagihan</span>
+                      <span className="text-white text-sm font-semibold font-sans mt-1 block">{formatAmount(totalVal)}</span>
                     </div>
                     <div>
-                      <span className="text-[11px] text-[#909090] block uppercase tracking-wider font-semibold">Telah Dibayar</span>
-                      <span className="text-green-400 text-base font-semibold font-sans mt-1 block">{formatAmount(paidVal)}</span>
+                      <span className="text-xs text-[#71717A] block font-medium">Telah Dibayar</span>
+                      <span className="text-emerald-400 text-sm font-semibold font-sans mt-1 block">{formatAmount(paidVal)}</span>
                     </div>
                     <div>
-                      <span className="text-[11px] text-[#909090] block uppercase tracking-wider font-semibold">Sisa Tagihan</span>
-                      <span className="text-[#E87A5D] text-base font-semibold font-sans mt-1 block">{formatAmount(remainingVal)}</span>
+                      <span className="text-xs text-[#71717A] block font-medium">Sisa Tagihan</span>
+                      <span className="text-[#EA580C] text-sm font-semibold font-sans mt-1 block">{formatAmount(remainingVal)}</span>
                     </div>
                   </div>
 
                   {/* Journal Tables */}
                   <div className="space-y-5">
-                    {/* 1. Pengakuan Invoice */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-[#E87A5D] rounded-full"></span>
-                          1. Jurnal Pengakuan Tagihan (Invoicing)
-                        </h3>
-                        <span className="text-[11px] text-[#909090]">Dapat Disesuaikan</span>
-                      </div>
-                      <div className="border border-[#2A2A2A] rounded-lg overflow-hidden bg-[#0A0A0A]">
+                    {/* Invoice Journal Table */}
+                    <div className="space-y-2.5">
+                      <div className="border border-[#27272A] rounded-xl overflow-visible bg-[#121214] shadow-sm">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
-                            <tr className="border-b border-[#2A2A2A] bg-[#141517] text-[#909090] font-semibold">
-                              <th className="py-2.5 px-3">Posisi</th>
-                              <th className="py-2.5 px-3">Akun Pilihan</th>
-                              <th className="py-2.5 px-3 text-right">Debit</th>
-                              <th className="py-2.5 px-3 text-right">Kredit</th>
+                            <tr className="border-b border-[#27272A] bg-[#18181B] text-[#A1A1AA] text-[11px] font-semibold">
+                              <th className="py-2.5 px-3.5 rounded-tl-xl">Posisi</th>
+                              <th className="py-2.5 px-3.5">Akun Pilihan</th>
+                              <th className="py-2.5 px-3.5 text-right">Debit</th>
+                              <th className="py-2.5 px-3.5 text-right rounded-tr-xl">Kredit</th>
                             </tr>
                           </thead>
                           <tbody>
-                            <tr className="border-b border-[#2A2A2A]/40 text-white">
-                              <td className="py-2 px-3 font-semibold text-green-400">Debit (Dr.)</td>
-                              <td className="py-2 px-3">
-                                <select
+                            <tr className="border-b border-[#27272A]/50 text-white hover:bg-[#1C1C1F] transition-colors">
+                              <td className="py-2.5 px-3.5 font-semibold text-emerald-400">Debit (Dr.)</td>
+                              <td className="py-2 px-3.5">
+                                <AccountDropdown
                                   value={currentInv.customDebitAccount || (isSales ? '1200 - Piutang Usaha' : '5100 - Harga Pokok Penjualan')}
-                                  onChange={(e) => {
-                                    const updated = { ...currentInv, customDebitAccount: e.target.value };
+                                  options={coaAccountsList.map(a => ({ value: a.label, label: a.label }))}
+                                  onChange={(val: string) => {
+                                    const updated = { ...currentInv, customDebitAccount: val };
                                     updateInvoice(updated, currentInv);
                                     setInvoices(getStoredInvoices());
                                   }}
-                                  className="w-full h-8 px-2 bg-[#141517] border border-[#2A2A2A] rounded text-[11.5px] text-white focus:outline-none focus:border-[#E87A5D]"
-                                >
-                                  {coaAccountsList.map(a => (
-                                    <option key={`mdeb-${a.code}`} value={a.label}>{a.label}</option>
-                                  ))}
-                                </select>
+                                />
                               </td>
-                              <td className="py-2 px-3 text-right font-sans">{formatAmount(totalVal)}</td>
-                              <td className="py-2 px-3 text-right font-sans">-</td>
+                              <td className="py-2.5 px-3.5 text-right font-sans font-semibold">{formatAmount(totalVal)}</td>
+                              <td className="py-2.5 px-3.5 text-right font-sans text-[#71717A]">-</td>
                             </tr>
-                            <tr className="text-white">
-                              <td className="py-2 px-3 font-semibold text-red-400">Kredit (Cr.)</td>
-                              <td className="py-2 px-3">
-                                <select
+                            <tr className="text-white hover:bg-[#1C1C1F] transition-colors">
+                              <td className="py-2.5 px-3.5 font-semibold text-rose-400">Kredit (Cr.)</td>
+                              <td className="py-2 px-3.5">
+                                <AccountDropdown
                                   value={currentInv.customCreditAccount || (isSales ? '4100 - Penjualan Produk' : '2100 - Utang Usaha')}
-                                  onChange={(e) => {
-                                    const updated = { ...currentInv, customCreditAccount: e.target.value };
+                                  options={coaAccountsList.map(a => ({ value: a.label, label: a.label }))}
+                                  onChange={(val: string) => {
+                                    const updated = { ...currentInv, customCreditAccount: val };
                                     updateInvoice(updated, currentInv);
                                     setInvoices(getStoredInvoices());
                                   }}
-                                  className="w-full h-8 px-2 bg-[#141517] border border-[#2A2A2A] rounded text-[11.5px] text-white focus:outline-none focus:border-[#E87A5D]"
-                                >
-                                  {coaAccountsList.map(a => (
-                                    <option key={`mcred-${a.code}`} value={a.label}>{a.label}</option>
-                                  ))}
-                                </select>
+                                />
                               </td>
-                              <td className="py-2 px-3 text-right font-sans">-</td>
-                              <td className="py-2 px-3 text-right font-sans">{formatAmount(totalVal)}</td>
+                              <td className="py-2.5 px-3.5 text-right font-sans text-[#71717A]">-</td>
+                              <td className="py-2.5 px-3.5 text-right font-sans font-semibold">{formatAmount(totalVal)}</td>
                             </tr>
                           </tbody>
                         </table>
                       </div>
                     </div>
 
-                    {/* 2. Jurnal Pembayaran */}
+                    {/* Jurnal Pembayaran */}
                     {paidVal > 0 && (
-                      <div className="space-y-2">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                          2. Jurnal Pelunasan / Pembayaran (Payment)
-                        </h3>
-                        <div className="border border-[#2A2A2A] rounded-lg overflow-hidden bg-[#0A0A0A]">
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-semibold text-white">
+                            Jurnal Pelunasan / Pembayaran
+                          </h3>
+                          <span className="text-[11px] font-medium text-[#A1A1AA] bg-[#27272A] px-2.5 py-0.5 rounded-full border border-[#3F3F46]/40">
+                            Terverifikasi
+                          </span>
+                        </div>
+                        <div className="border border-[#27272A] rounded-xl overflow-visible bg-[#121214] shadow-sm">
                           <table className="w-full text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-[#2A2A2A] bg-[#141517] text-[#909090] font-semibold">
-                                <th className="py-2.5 px-3">Posisi</th>
-                                <th className="py-2.5 px-3">Akun Pilihan</th>
-                                <th className="py-2.5 px-3 text-right">Debit</th>
-                                <th className="py-2.5 px-3 text-right">Kredit</th>
+                              <tr className="border-b border-[#27272A] bg-[#18181B] text-[#A1A1AA] text-[11px] font-semibold">
+                                <th className="py-2.5 px-3.5 rounded-tl-xl">Posisi</th>
+                                <th className="py-2.5 px-3.5">Akun Pilihan</th>
+                                <th className="py-2.5 px-3.5 text-right">Debit</th>
+                                <th className="py-2.5 px-3.5 text-right rounded-tr-xl">Kredit</th>
                               </tr>
                             </thead>
                             <tbody>
-                              <tr className="border-b border-[#2A2A2A]/40 text-white">
-                                <td className="py-2 px-3 font-semibold text-green-400">Debit (Dr.)</td>
-                                <td className="py-2 px-3">
-                                  <select
+                              <tr className="border-b border-[#27272A]/50 text-white hover:bg-[#1C1C1F] transition-colors">
+                                <td className="py-2.5 px-3.5 font-semibold text-emerald-400">Debit (Dr.)</td>
+                                <td className="py-2 px-3.5">
+                                  <AccountDropdown
                                     value={currentInv.customPaymentDebitAccount || (isSales ? ((currentInv.paymentBank || paymentBank) === 'Cash' ? '1120 - Kas di Toko' : '1130 - Bank BCA') : '2100 - Utang Usaha')}
-                                    onChange={(e) => {
-                                      const updated = { ...currentInv, customPaymentDebitAccount: e.target.value };
+                                    options={coaAccountsList.map(a => ({ value: a.label, label: a.label }))}
+                                    onChange={(val: string) => {
+                                      const updated = { ...currentInv, customPaymentDebitAccount: val };
                                       updateInvoice(updated, currentInv);
                                       setInvoices(getStoredInvoices());
                                     }}
-                                    className="w-full h-8 px-2 bg-[#141517] border border-[#2A2A2A] rounded text-[11.5px] text-white focus:outline-none focus:border-[#E87A5D]"
-                                  >
-                                    {coaAccountsList.map(a => (
-                                      <option key={`mpdeb-${a.code}`} value={a.label}>{a.label}</option>
-                                    ))}
-                                  </select>
+                                  />
                                 </td>
-                                <td className="py-2 px-3 text-right font-sans text-green-400">{formatAmount(paidVal)}</td>
-                                <td className="py-2 px-3 text-right font-sans">-</td>
+                                <td className="py-2.5 px-3.5 text-right font-sans font-semibold text-emerald-400">{formatAmount(paidVal)}</td>
+                                <td className="py-2.5 px-3.5 text-right font-sans text-[#71717A]">-</td>
                               </tr>
-                              <tr className="text-white">
-                                <td className="py-2 px-3 font-semibold text-red-400">Kredit (Cr.)</td>
-                                <td className="py-2 px-3">
-                                  <select
+                              <tr className="text-white hover:bg-[#1C1C1F] transition-colors">
+                                <td className="py-2.5 px-3.5 font-semibold text-rose-400">Kredit (Cr.)</td>
+                                <td className="py-2 px-3.5">
+                                  <AccountDropdown
                                     value={currentInv.customPaymentCreditAccount || (isSales ? '1200 - Piutang Usaha' : ((currentInv.paymentBank || paymentBank) === 'Cash' ? '1120 - Kas di Toko' : '1130 - Bank BCA'))}
-                                    onChange={(e) => {
-                                      const updated = { ...currentInv, customPaymentCreditAccount: e.target.value };
+                                    options={coaAccountsList.map(a => ({ value: a.label, label: a.label }))}
+                                    onChange={(val: string) => {
+                                      const updated = { ...currentInv, customPaymentCreditAccount: val };
                                       updateInvoice(updated, currentInv);
                                       setInvoices(getStoredInvoices());
                                     }}
-                                    className="w-full h-8 px-2 bg-[#141517] border border-[#2A2A2A] rounded text-[11.5px] text-white focus:outline-none focus:border-[#E87A5D]"
-                                  >
-                                    {coaAccountsList.map(a => (
-                                      <option key={`mpcred-${a.code}`} value={a.label}>{a.label}</option>
-                                    ))}
-                                  </select>
+                                  />
                                 </td>
-                                <td className="py-2 px-3 text-right font-sans">-</td>
-                                <td className="py-2 px-3 text-right font-sans text-red-400">{formatAmount(paidVal)}</td>
+                                <td className="py-2.5 px-3.5 text-right font-sans text-[#71717A]">-</td>
+                                <td className="py-2.5 px-3.5 text-right font-sans font-semibold text-rose-400">{formatAmount(paidVal)}</td>
                               </tr>
                             </tbody>
                           </table>
@@ -5534,11 +5627,12 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 p-5 border-t border-[#2A2A2A] bg-[#0A0A0A]">
+                {/* Modal Footer */}
+                <div className="flex items-center justify-end p-4 border-t border-[#27272A] bg-[#121214]">
                   <button 
                     type="button"
                     onClick={() => setShowAccountingModal(false)}
-                    className="px-5 py-2 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors cursor-pointer"
+                    className="px-5 py-2 text-xs font-semibold text-white bg-[#EA580C] hover:bg-[#D97706] rounded-xl transition-colors cursor-pointer shadow-sm"
                   >
                     Selesai
                   </button>
@@ -5775,7 +5869,7 @@ export function Purchase({ isSales = false, searchQuery = '' }: PurchaseProps) {
                     className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#2A2B30] hover:bg-[#34363F] border border-[#3A3D4A] rounded-lg transition-colors cursor-pointer"
                   >
                     <Printer size={14} className="text-[#EA580C]" />
-                    <span>Cetak Surat</span>
+                    <span>Print</span>
                   </button>
                   <button 
                     type="button"
