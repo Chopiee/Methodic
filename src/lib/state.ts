@@ -1301,6 +1301,107 @@ export const deleteCost = (costId: string) => {
   window.dispatchEvent(new Event('accounts-updated'));
 };
 
+export const updateJournalTransaction = (
+  id: string,
+  updatedData: {
+    date: string;
+    description: string;
+    debitAccount?: string;
+    creditAccount?: string;
+    amount?: number;
+  },
+  originalIndex?: number
+) => {
+  const ledger = getStoredLedger();
+  const mapCat = (code: string): 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense' => {
+    if (code.startsWith('1')) return 'Asset';
+    if (code.startsWith('2')) return 'Liability';
+    if (code.startsWith('3')) return 'Equity';
+    if (code.startsWith('4')) return 'Revenue';
+    return 'Expense';
+  };
+
+  const hasId = Boolean(id && id.trim());
+  const matchingEntries = hasId ? ledger.filter(l => l.id === id) : [];
+
+  if (hasId && matchingEntries.length > 0) {
+    const isDebitEntry = (l: JournalEntry) => l.debit !== '-' && typeof l.debit === 'number';
+
+    const updatedLedger = ledger.map(entry => {
+      if (entry.id !== id) return entry;
+
+      if (isDebitEntry(entry)) {
+        const newAcc = updatedData.debitAccount || entry.account;
+        const accCode = newAcc.split(' ')[0];
+        return {
+          ...entry,
+          date: updatedData.date || entry.date,
+          description: updatedData.description !== undefined ? updatedData.description : entry.description,
+          account: newAcc,
+          category: mapCat(accCode),
+          debit: typeof updatedData.amount === 'number' && updatedData.amount > 0 ? updatedData.amount : entry.debit
+        };
+      } else {
+        const newAcc = updatedData.creditAccount || entry.account;
+        const accCode = newAcc.split(' ')[0];
+        return {
+          ...entry,
+          date: updatedData.date || entry.date,
+          description: updatedData.description !== undefined ? updatedData.description : entry.description,
+          account: newAcc,
+          category: mapCat(accCode),
+          credit: typeof updatedData.amount === 'number' && updatedData.amount > 0 ? updatedData.amount : entry.credit
+        };
+      }
+    });
+
+    saveLedger(updatedLedger);
+  } else if (typeof originalIndex === 'number' && originalIndex >= 0 && ledger[originalIndex]) {
+    const target = ledger[originalIndex];
+    const isDebit = target.debit !== '-' && typeof target.debit === 'number';
+
+    ledger[originalIndex] = {
+      ...target,
+      date: updatedData.date || target.date,
+      description: updatedData.description !== undefined ? updatedData.description : target.description,
+      account: isDebit ? (updatedData.debitAccount || target.account) : (updatedData.creditAccount || target.account),
+      debit: isDebit ? (typeof updatedData.amount === 'number' ? updatedData.amount : target.debit) : '-',
+      credit: !isDebit ? (typeof updatedData.amount === 'number' ? updatedData.amount : target.credit) : '-'
+    };
+
+    saveLedger(ledger);
+  }
+
+  if (hasId) {
+    const invoices = getStoredInvoices();
+    const invIdx = invoices.findIndex(inv => inv.id === id);
+    if (invIdx > -1) {
+      invoices[invIdx].date = updatedData.date || invoices[invIdx].date;
+      if (updatedData.description) invoices[invIdx].ref = updatedData.description;
+      if (typeof updatedData.amount === 'number' && updatedData.amount > 0) {
+        invoices[invIdx].total = updatedData.amount;
+      }
+      saveInvoices(invoices);
+      window.dispatchEvent(new Event('invoices-updated'));
+    }
+
+    const costs = getStoredCosts();
+    const costIdx = costs.findIndex(c => c.id === id);
+    if (costIdx > -1) {
+      costs[costIdx].date = updatedData.date || costs[costIdx].date;
+      if (updatedData.description) costs[costIdx].desc = updatedData.description;
+      if (typeof updatedData.amount === 'number' && updatedData.amount > 0) {
+        costs[costIdx].amount = updatedData.amount;
+      }
+      saveCosts(costs);
+      window.dispatchEvent(new Event('costs-updated'));
+    }
+  }
+
+  window.dispatchEvent(new Event('ledger-updated'));
+  window.dispatchEvent(new Event('accounts-updated'));
+};
+
 export const deleteJournalTransaction = (id: string, entryIndex?: number) => {
   const ledger = getStoredLedger();
   let filteredLedger: JournalEntry[];

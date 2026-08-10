@@ -11,6 +11,7 @@ import {
   getStoredCosts,
   addManualTransaction,
   deleteJournalTransaction,
+  updateJournalTransaction,
   AccountItem, 
   JournalEntry,
   InvoiceItem,
@@ -329,12 +330,88 @@ export function Accounting() {
   const [ledger, setLedger] = useState<JournalEntry[]>(() => getStoredLedger());
   const [unifiedTxList, setUnifiedTxList] = useState<UnifiedTransaction[]>(() => buildUnifiedTransactions());
 
-  // Jurnal Umum Filter & Deletion States
+  // Jurnal Umum Filter, Edit & Deletion States
   const [jurnalSearch, setJurnalSearch] = useState('');
   const [jurnalStartDate, setJurnalStartDate] = useState('');
   const [jurnalEndDate, setJurnalEndDate] = useState('');
   const [deleteConfirmTx, setDeleteConfirmTx] = useState<{ id: string; date: string; account: string; debit: number | string; credit: number | string; index: number } | null>(null);
   const [deleteSuccessMsg, setDeleteSuccessMsg] = useState('');
+
+  // Edit Jurnal State
+  const [editingJurnalTx, setEditingJurnalTx] = useState<{
+    id: string;
+    date: string;
+    description: string;
+    debitAccount: string;
+    creditAccount: string;
+    amount: number;
+    originalIndex: number;
+  } | null>(null);
+  const [editJurnalDate, setEditJurnalDate] = useState('');
+  const [editJurnalDesc, setEditJurnalDesc] = useState('');
+  const [editJurnalDebitAcc, setEditJurnalDebitAcc] = useState('');
+  const [editJurnalCreditAcc, setEditJurnalCreditAcc] = useState('');
+  const [editJurnalAmount, setEditJurnalAmount] = useState<number | ''>('');
+
+  const handleStartEditJurnalTx = (tx: {
+    id: string;
+    date: string;
+    description: string;
+    debitAccount: string;
+    creditAccount: string;
+    amount: number;
+    originalIndex: number;
+  }) => {
+    setEditingJurnalTx(tx);
+    let dStr = tx.date || '';
+    if (dStr.includes('/')) {
+      const parts = dStr.split('/');
+      if (parts.length === 3) {
+        dStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    setEditJurnalDate(dStr);
+    setEditJurnalDesc(tx.description || '');
+    setEditJurnalDebitAcc(tx.debitAccount || (accounts[0] ? `${accounts[0].code} - ${accounts[0].name}` : ''));
+    setEditJurnalCreditAcc(tx.creditAccount || (accounts[1] ? `${accounts[1].code} - ${accounts[1].name}` : ''));
+    setEditJurnalAmount(tx.amount || 0);
+  };
+
+  const handleSaveEditJurnalTx = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingJurnalTx) return;
+
+    if (!editJurnalDate.trim()) {
+      alert('Tanggal transaksi wajib diisi.');
+      return;
+    }
+    if (!editJurnalDebitAcc || !editJurnalCreditAcc) {
+      alert('Akun Debit dan Kredit wajib dipilih.');
+      return;
+    }
+    if (typeof editJurnalAmount !== 'number' || editJurnalAmount <= 0) {
+      alert('Nominal transaksi harus lebih besar dari 0.');
+      return;
+    }
+
+    updateJournalTransaction(
+      editingJurnalTx.id,
+      {
+        date: editJurnalDate,
+        description: editJurnalDesc,
+        debitAccount: editJurnalDebitAcc,
+        creditAccount: editJurnalCreditAcc,
+        amount: editJurnalAmount
+      },
+      editingJurnalTx.originalIndex
+    );
+
+    setLedger(getStoredLedger());
+    setUnifiedTxList(buildUnifiedTransactions());
+    setEditingJurnalTx(null);
+    setDeleteSuccessMsg(`Transaksi Jurnal ${editingJurnalTx.id || 'berhasil'} diperbarui. Laporan keuangan telah disesuaikan.`);
+    setTimeout(() => setDeleteSuccessMsg(''), 4000);
+  };
 
   const handleDeleteJurnalTx = () => {
     if (!deleteConfirmTx) return;
@@ -346,14 +423,18 @@ export function Accounting() {
     setTimeout(() => setDeleteSuccessMsg(''), 4000);
   };
 
+  const nowJurnal = new Date();
+  const initJurnalStart = new Date(nowJurnal.getFullYear(), nowJurnal.getMonth(), 1);
+  const initJurnalEnd = new Date(nowJurnal.getFullYear(), nowJurnal.getMonth() + 1, 0);
+
   // Jurnal Range Date Picker States (Purchase-style)
-  const [jurnalRangeStart, setJurnalRangeStart] = useState<Date>(() => new Date(2026, 0, 1));
-  const [jurnalRangeEnd, setJurnalRangeEnd] = useState<Date>(() => new Date(2026, 11, 31));
+  const [jurnalRangeStart, setJurnalRangeStart] = useState<Date>(() => initJurnalStart);
+  const [jurnalRangeEnd, setJurnalRangeEnd] = useState<Date>(() => initJurnalEnd);
   const [showJurnalDatePopup, setShowJurnalDatePopup] = useState(false);
-  const [jurnalPreset, setJurnalPreset] = useState<string>('This year');
-  const [jurnalTempStart, setJurnalTempStart] = useState<Date | null>(() => new Date(2026, 0, 1));
-  const [jurnalTempEnd, setJurnalTempEnd] = useState<Date | null>(() => new Date(2026, 11, 31));
-  const [jurnalCurrentViewDate, setJurnalCurrentViewDate] = useState<Date>(() => new Date(2026, 0, 1));
+  const [jurnalPreset, setJurnalPreset] = useState<string>('This month');
+  const [jurnalTempStart, setJurnalTempStart] = useState<Date | null>(() => initJurnalStart);
+  const [jurnalTempEnd, setJurnalTempEnd] = useState<Date | null>(() => initJurnalEnd);
+  const [jurnalCurrentViewDate, setJurnalCurrentViewDate] = useState<Date>(() => initJurnalStart);
 
   const handleJurnalPresetClick = (preset: string) => {
     setJurnalPreset(preset);
@@ -1243,22 +1324,91 @@ export function Accounting() {
 
       {/* JURNAL UMUM VIEW */}
       {activeView === 'jurnal' && (() => {
-        const filteredLedger = ledger.filter(entry => {
+        interface GroupedTxItem {
+          id: string;
+          date: string;
+          description: string;
+          status: string;
+          debitAccount: string;
+          creditAccount: string;
+          amount: number;
+          originalIndices: number[];
+        }
+
+        const groupedMap = new Map<string, GroupedTxItem>();
+        const listWithoutId: GroupedTxItem[] = [];
+
+        ledger.forEach((entry, idx) => {
+          const refId = entry.id ? entry.id.trim() : '';
+
+          if (!refId) {
+            const isDebit = entry.debit !== '-' && typeof entry.debit === 'number';
+            const amt = isDebit ? (entry.debit as number) : (typeof entry.credit === 'number' ? entry.credit : 0);
+            listWithoutId.push({
+              id: `TX-${idx + 1}`,
+              date: entry.date,
+              description: entry.description,
+              status: entry.status || 'Posted',
+              debitAccount: isDebit ? entry.account : '-',
+              creditAccount: !isDebit ? entry.account : '-',
+              amount: amt,
+              originalIndices: [idx]
+            });
+            return;
+          }
+
+          if (!groupedMap.has(refId)) {
+            groupedMap.set(refId, {
+              id: refId,
+              date: entry.date,
+              description: entry.description,
+              status: entry.status || 'Posted',
+              debitAccount: '',
+              creditAccount: '',
+              amount: 0,
+              originalIndices: []
+            });
+          }
+
+          const group = groupedMap.get(refId)!;
+          group.originalIndices.push(idx);
+
+          if (entry.date) group.date = entry.date;
+          if (entry.description && !group.description) group.description = entry.description;
+
+          const debAmt = typeof entry.debit === 'number' ? entry.debit : 0;
+          const credAmt = typeof entry.credit === 'number' ? entry.credit : 0;
+
+          if (debAmt > 0) {
+            if (!group.debitAccount) group.debitAccount = entry.account;
+            if (group.amount === 0) group.amount = debAmt;
+          }
+          if (credAmt > 0) {
+            if (!group.creditAccount) group.creditAccount = entry.account;
+            if (group.amount === 0) group.amount = credAmt;
+          }
+        });
+
+        const groupedList: GroupedTxItem[] = [...Array.from(groupedMap.values()), ...listWithoutId];
+
+        const filteredGrouped = groupedList.filter(group => {
           if (jurnalSearch.trim()) {
             const q = jurnalSearch.toLowerCase().trim();
-            const matchesId = entry.id.toLowerCase().includes(q);
-            const matchesAccount = entry.account.toLowerCase().includes(q);
-            const matchesDesc = (entry.description || '').toLowerCase().includes(q);
-            const matchesStatus = (entry.status || '').toLowerCase().includes(q);
-            const matchesDebit = typeof entry.debit === 'number' && entry.debit.toString().includes(q);
-            const matchesCredit = typeof entry.credit === 'number' && entry.credit.toString().includes(q);
-            if (!matchesId && !matchesAccount && !matchesDesc && !matchesStatus && !matchesDebit && !matchesCredit) {
+            const matchesId = group.id.toLowerCase().includes(q);
+            const matchesDate = group.date.toLowerCase().includes(q);
+            const matchesDesc = (group.description || '').toLowerCase().includes(q);
+            const matchesDebitAcc = group.debitAccount.toLowerCase().includes(q);
+            const matchesCreditAcc = group.creditAccount.toLowerCase().includes(q);
+            const matchesStatus = (group.status || '').toLowerCase().includes(q);
+            const matchesAmount = group.amount.toString().includes(q);
+
+            if (!matchesId && !matchesDate && !matchesDesc && !matchesDebitAcc && !matchesCreditAcc && !matchesStatus && !matchesAmount) {
               return false;
             }
           }
 
           if (jurnalRangeStart || jurnalRangeEnd) {
-            const entryDate = parseAnyDate(entry.date);
+            const entryDate = parseAnyDate(group.date);
             if (entryDate) {
               if (jurnalRangeStart) {
                 const start = new Date(jurnalRangeStart);
@@ -1276,8 +1426,7 @@ export function Accounting() {
           return true;
         });
 
-        const totalFilteredDebit = filteredLedger.reduce((sum, e) => sum + (typeof e.debit === 'number' ? e.debit : 0), 0);
-        const totalFilteredCredit = filteredLedger.reduce((sum, e) => sum + (typeof e.credit === 'number' ? e.credit : 0), 0);
+        const totalFilteredAmount = filteredGrouped.reduce((sum, g) => sum + g.amount, 0);
 
         return (
           <div className="flex-1 p-8 flex flex-col space-y-5">
@@ -1285,16 +1434,13 @@ export function Accounting() {
               <div>
                 <h2 className="text-base font-bold text-white">Daftar Transaksi Jurnal Umum</h2>
                 <p className="text-xs text-[#909090] mt-0.5">
-                  Menampilkan {filteredLedger.length} dari {ledger.length} entri terposting
+                  Menampilkan {filteredGrouped.length} dari {groupedList.length} transaksi terposting
                 </p>
               </div>
 
               <div className="flex items-center gap-2.5 flex-wrap">
-                <span className="text-xs bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 px-3 py-1.5 rounded-xl font-medium">
-                  Total Debit: Rp {totalFilteredDebit.toLocaleString('id-ID')}
-                </span>
-                <span className="text-xs bg-[#EF4444]/10 text-[#EF4444] border border-[#EF4444]/20 px-3 py-1.5 rounded-xl font-medium">
-                  Total Kredit: Rp {totalFilteredCredit.toLocaleString('id-ID')}
+                <span className="text-xs bg-[#EA580C]/10 text-[#EA580C] border border-[#EA580C]/20 px-3 py-1.5 rounded-xl font-medium">
+                  Total Transaksi: Rp {totalFilteredAmount.toLocaleString('id-ID')}
                 </span>
               </div>
             </div>
@@ -1306,7 +1452,7 @@ export function Accounting() {
                 <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#71717A]" />
                 <input
                   type="text"
-                  placeholder="Cari Ref ID, Nama Akun, Keterangan..."
+                  placeholder="Cari Ref ID, Akun Debit/Kredit, Keterangan..."
                   value={jurnalSearch}
                   onChange={(e) => setJurnalSearch(e.target.value)}
                   className="w-full bg-[#18181B] border border-[#27272A] rounded-xl pl-9 pr-8 py-2 text-white placeholder-[#52525B] focus:outline-none focus:border-[#EA580C] transition-colors"
@@ -1321,7 +1467,7 @@ export function Accounting() {
                 )}
               </div>
 
-              {/* Date Range Picker (Purchase style) */}
+              {/* Date Range Picker */}
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative">
                   <div 
@@ -1423,7 +1569,7 @@ export function Accounting() {
               </div>
             </div>
 
-            {/* Delete Success Alert */}
+            {/* Success Alert */}
             {deleteSuccessMsg && (
               <div className="bg-[#10B981]/10 border border-[#10B981]/20 text-[#10B981] text-xs px-4 py-3 rounded-xl flex items-center justify-between shadow-lg">
                 <div className="flex items-center gap-2">
@@ -1442,55 +1588,79 @@ export function Accounting() {
                 <thead>
                   <tr className="border-b border-[#27272A] bg-[#18181B] text-[#8E9097] text-xs font-semibold">
                     <th className="py-3.5 px-4 w-28">Ref ID</th>
-                    <th className="py-3.5 px-4 w-32">Tanggal</th>
-                    <th className="py-3.5 px-4">Nama Akun</th>
-                    <th className="py-3.5 px-4">Keterangan</th>
-                    <th className="py-3.5 px-4 text-right">Debit</th>
-                    <th className="py-3.5 px-4 text-right">Kredit</th>
+                    <th className="py-3.5 px-4 w-28">Tanggal</th>
+                    <th className="py-3.5 px-4">Akun Debit & Kredit</th>
+                    <th className="py-3.5 px-4">Catatan / Note</th>
+                    <th className="py-3.5 px-4 text-right w-36">Nominal (Rp)</th>
                     <th className="py-3.5 px-4 text-center w-24">Status</th>
-                    <th className="py-3.5 px-4 text-center w-20">Aksi</th>
+                    <th className="py-3.5 px-4 text-center w-24">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#27272A]/60 text-xs">
-                  {filteredLedger.length > 0 ? (
-                    filteredLedger.map((entry, index) => (
-                      <tr key={`${entry.id}-${entry.account}-${index}`} className="hover:bg-[#18181B] transition-colors">
-                        <td className="py-3.5 px-4 font-mono text-[#A1A1AA]">{entry.id}</td>
-                        <td className="py-3.5 px-4 text-[#D4D4D8]">{entry.date}</td>
-                        <td className="py-3.5 px-4 font-semibold text-white">{entry.account}</td>
-                        <td className="py-3.5 px-4 text-[#A1A1AA]">{entry.description}</td>
-                        <td className="py-3.5 px-4 text-right font-medium text-[#10B981]">
-                          {typeof entry.debit === 'number' && entry.debit > 0 ? `Rp ${entry.debit.toLocaleString('id-ID')}` : '-'}
+                  {filteredGrouped.length > 0 ? (
+                    filteredGrouped.map((tx, index) => (
+                      <tr key={`${tx.id}-${index}`} className="hover:bg-[#18181B] transition-colors">
+                        <td className="py-3.5 px-4 font-mono text-[#A1A1AA] font-medium">{tx.id}</td>
+                        <td className="py-3.5 px-4 text-[#D4D4D8]">{tx.date}</td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex flex-col gap-1 py-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 px-1.5 py-0.5 rounded shrink-0">Dr</span>
+                              <span className="font-semibold text-white truncate">{tx.debitAccount || '-'}</span>
+                            </div>
+                            <div className="flex items-center gap-2 pl-2">
+                              <span className="text-[10px] font-bold bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/30 px-1.5 py-0.5 rounded shrink-0">Cr</span>
+                              <span className="text-[#D4D4D8] truncate">{tx.creditAccount || '-'}</span>
+                            </div>
+                          </div>
                         </td>
-                        <td className="py-3.5 px-4 text-right font-medium text-[#EF4444]">
-                          {typeof entry.credit === 'number' && entry.credit > 0 ? `Rp ${entry.credit.toLocaleString('id-ID')}` : '-'}
+                        <td className="py-3.5 px-4 text-[#A1A1AA] max-w-xs">{tx.description || '-'}</td>
+                        <td className="py-3.5 px-4 text-right font-semibold text-white">
+                          Rp {tx.amount.toLocaleString('id-ID')}
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-                            {entry.status}
+                            {tx.status}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <button
-                            onClick={() => setDeleteConfirmTx({
-                              id: entry.id,
-                              date: entry.date,
-                              account: entry.account,
-                              debit: entry.debit,
-                              credit: entry.credit,
-                              index
-                            })}
-                            className="p-1.5 hover:bg-red-500/10 text-[#71717A] hover:text-red-400 rounded-lg transition-colors cursor-pointer"
-                            title="Hapus Transaksi Jurnal"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleStartEditJurnalTx({
+                                id: tx.id,
+                                date: tx.date,
+                                description: tx.description,
+                                debitAccount: tx.debitAccount,
+                                creditAccount: tx.creditAccount,
+                                amount: tx.amount,
+                                originalIndex: tx.originalIndices[0] ?? -1
+                              })}
+                              className="p-1.5 hover:bg-[#EA580C]/10 text-[#71717A] hover:text-[#EA580C] rounded-lg transition-colors cursor-pointer"
+                              title="Edit Transaksi Jurnal (Tanggal, Note, Akun)"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmTx({
+                                id: tx.id,
+                                date: tx.date,
+                                account: `Debit: ${tx.debitAccount} | Kredit: ${tx.creditAccount}`,
+                                debit: tx.amount,
+                                credit: tx.amount,
+                                index: tx.originalIndices[0] ?? -1
+                              })}
+                              className="p-1.5 hover:bg-red-500/10 text-[#71717A] hover:text-red-400 rounded-lg transition-colors cursor-pointer"
+                              title="Hapus Transaksi Jurnal"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-xs text-[#71717A]">
+                      <td colSpan={7} className="py-12 text-center text-xs text-[#71717A]">
                         Tidak ada transaksi jurnal umum yang cocok dengan filter pencarian.
                       </td>
                     </tr>
@@ -1498,6 +1668,116 @@ export function Accounting() {
                 </tbody>
               </table>
             </div>
+
+            {/* Modal Edit Journal Transaction */}
+            {editingJurnalTx && (
+              <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-[#121214] border border-[#27272A] rounded-2xl w-full max-w-lg p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in duration-150">
+                  <div className="flex items-center justify-between border-b border-[#27272A] pb-3">
+                    <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                      <Edit3 size={18} className="text-[#EA580C]" />
+                      <span>Edit Transaksi Jurnal ({editingJurnalTx.id})</span>
+                    </div>
+                    <button 
+                      onClick={() => setEditingJurnalTx(null)}
+                      className="text-[#71717A] hover:text-white transition-colors cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveEditJurnalTx} className="space-y-4 text-xs">
+                    {/* Tanggal Transaksi */}
+                    <div>
+                      <label className="block text-[#A1A1AA] font-medium mb-1.5">Tanggal Transaksi</label>
+                      <input
+                        type="date"
+                        value={editJurnalDate}
+                        onChange={(e) => setEditJurnalDate(e.target.value)}
+                        className="w-full bg-[#18181B] border border-[#27272A] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#EA580C] transition-colors"
+                        required
+                      />
+                    </div>
+
+                    {/* Keterangan / Note */}
+                    <div>
+                      <label className="block text-[#A1A1AA] font-medium mb-1.5">Keterangan / Catatan Transaksi</label>
+                      <input
+                        type="text"
+                        value={editJurnalDesc}
+                        onChange={(e) => setEditJurnalDesc(e.target.value)}
+                        placeholder="Contoh: Penjualan produk, Pembayaran biaya operasional..."
+                        className="w-full bg-[#18181B] border border-[#27272A] rounded-xl px-3.5 py-2.5 text-white placeholder-[#52525B] focus:outline-none focus:border-[#EA580C] transition-colors"
+                        required
+                      />
+                    </div>
+
+                    {/* Akun Debit */}
+                    <div>
+                      <label className="block text-[#A1A1AA] font-medium mb-1.5">Akun Debit (Dr)</label>
+                      <select
+                        value={editJurnalDebitAcc}
+                        onChange={(e) => setEditJurnalDebitAcc(e.target.value)}
+                        className="w-full bg-[#18181B] border border-[#27272A] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#EA580C] transition-colors"
+                      >
+                        {accounts.map((acc) => (
+                          <option key={`deb-${acc.code}`} value={`${acc.code} - ${acc.name}`}>
+                            {acc.code} - {acc.name} ({acc.category})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Akun Kredit */}
+                    <div>
+                      <label className="block text-[#A1A1AA] font-medium mb-1.5">Akun Kredit (Cr)</label>
+                      <select
+                        value={editJurnalCreditAcc}
+                        onChange={(e) => setEditJurnalCreditAcc(e.target.value)}
+                        className="w-full bg-[#18181B] border border-[#27272A] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#EA580C] transition-colors"
+                      >
+                        {accounts.map((acc) => (
+                          <option key={`cred-${acc.code}`} value={`${acc.code} - ${acc.name}`}>
+                            {acc.code} - {acc.name} ({acc.category})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Nominal Rp */}
+                    <div>
+                      <label className="block text-[#A1A1AA] font-medium mb-1.5">Nominal Transaksi (Rp)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editJurnalAmount}
+                        onChange={(e) => setEditJurnalAmount(e.target.value ? Number(e.target.value) : '')}
+                        placeholder="0"
+                        className="w-full bg-[#18181B] border border-[#27272A] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#EA580C] transition-colors"
+                        required
+                      />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#27272A]">
+                      <button
+                        type="button"
+                        onClick={() => setEditingJurnalTx(null)}
+                        className="px-4 py-2 border border-[#27272A] hover:bg-[#18181B] text-[#A1A1AA] hover:text-white rounded-xl font-medium transition-colors cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-[#EA580C] hover:bg-[#D9694C] text-white font-semibold rounded-xl transition-colors cursor-pointer shadow-lg shadow-orange-500/20"
+                      >
+                        Simpan Perubahan
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {/* Modal Delete Confirmation */}
             {deleteConfirmTx && (

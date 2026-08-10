@@ -249,13 +249,17 @@ export function Reports() {
     setTimeout(() => setExportSuccessMessage(null), 5000);
   };
 
+  const reportNow = new Date();
+  const initReportStart = new Date(reportNow.getFullYear(), reportNow.getMonth(), 1);
+  const initReportEnd = new Date(reportNow.getFullYear(), reportNow.getMonth() + 1, 0);
+
   const [showDatePopup, setShowDatePopup] = useState(false);
-  const [rangeStart, setRangeStart] = useState<Date>(new Date(2026, 0, 1)); // 1 January 2026
-  const [rangeEnd, setRangeEnd] = useState<Date>(new Date(2026, 11, 31)); // 31 December 2026
-  const [tempStart, setTempStart] = useState<Date | null>(new Date(2026, 0, 1));
-  const [tempEnd, setTempEnd] = useState<Date | null>(new Date(2026, 11, 31));
-  const [currentViewDate, setCurrentViewDate] = useState<Date>(new Date(2026, 5, 1)); // June 2026
-  const [selectedPreset, setSelectedPreset] = useState<string>('This year');
+  const [rangeStart, setRangeStart] = useState<Date>(initReportStart);
+  const [rangeEnd, setRangeEnd] = useState<Date>(initReportEnd);
+  const [tempStart, setTempStart] = useState<Date | null>(initReportStart);
+  const [tempEnd, setTempEnd] = useState<Date | null>(initReportEnd);
+  const [currentViewDate, setCurrentViewDate] = useState<Date>(initReportStart);
+  const [selectedPreset, setSelectedPreset] = useState<string>('This month');
 
   const handleDayClick = (date: Date) => {
     setSelectedPreset(''); // clear preset
