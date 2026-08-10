@@ -1460,7 +1460,7 @@ export function Accounting() {
 
       {/* TRANSAKSI MANUAL VIEW */}
       {activeView === 'transaksi' && (
-        <div className="flex-1 w-full space-y-6">
+        <div className="flex-1 w-full px-8 py-6 space-y-6">
           
           {/* Top Banner Alert if Success */}
           {txSuccessMsg && (
@@ -1480,7 +1480,7 @@ export function Accounting() {
 
           <div className="w-full space-y-6">
             
-            <form onSubmit={handleManualTxSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleManualTxSubmit} className="w-full space-y-4 text-xs">
               
               {/* Row 1: Tanggal & Ref ID */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -814,9 +814,20 @@ export function Reports() {
                       <span>I. PENDAPATAN USAHA (REVENUE)</span>
                       <span>{formatRupiah(revenue)}</span>
                     </div>
-                    <div className="pl-4 flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded transition-colors">
-                      <span>Penjualan Produk</span>
-                      <span className="text-white font-medium">{formatRupiah(revenue)}</span>
+                    <div className="pl-4 space-y-1">
+                      {((selectedData as any).revenueDetails && (selectedData as any).revenueDetails.length > 0) ? (
+                        ((selectedData as any).revenueDetails as FinancialReportItem[]).map((rev, idx) => (
+                          <div key={idx} className="flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
+                            <span>{rev.name}</span>
+                            <span className="text-white font-medium">{formatRupiah(rev.amount)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded transition-colors">
+                          <span>Penjualan Produk</span>
+                          <span className="text-white font-medium">{formatRupiah(revenue)}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* HARGA POKOK PENJUALAN */}
@@ -825,10 +836,19 @@ export function Reports() {
                       <span className="text-white">({formatRupiah(cogs)})</span>
                     </div>
                     <div className="pl-4 space-y-1">
-                      <div className="flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
-                        <span>Harga Pokok Penjualan</span>
-                        <span className="text-white font-medium">{formatRupiah(cogs)}</span>
-                      </div>
+                      {((selectedData as any).cogsDetails && (selectedData as any).cogsDetails.length > 0) ? (
+                        ((selectedData as any).cogsDetails as FinancialReportItem[]).map((item, idx) => (
+                          <div key={idx} className="flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
+                            <span>{item.name}</span>
+                            <span className="text-white font-medium">{formatRupiah(item.amount)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
+                          <span>Harga Pokok Penjualan</span>
+                          <span className="text-white font-medium">{formatRupiah(cogs)}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Gross Profit */}
@@ -865,9 +885,20 @@ export function Reports() {
                       <span>IV. PENDAPATAN & BEBAN LAINNYA</span>
                       <span className="text-white">{formatRupiah(otherIncome)}</span>
                     </div>
-                    <div className="pl-4 flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded transition-colors">
-                      <span>Pendapatan Lain-lain</span>
-                      <span className="text-[#E5E5E5]">{formatRupiah(otherIncome)}</span>
+                    <div className="pl-4 space-y-1">
+                      {((selectedData as any).otherIncomeDetails && (selectedData as any).otherIncomeDetails.length > 0) ? (
+                        ((selectedData as any).otherIncomeDetails as FinancialReportItem[]).map((item, idx) => (
+                          <div key={idx} className="flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
+                            <span>{item.name}</span>
+                            <span className="text-white font-medium">{formatRupiah(item.amount)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex justify-between text-[12px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded transition-colors">
+                          <span>Pendapatan Lain-lain</span>
+                          <span className="text-[#E5E5E5]">{formatRupiah(otherIncome)}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Net Profit Before Tax */}

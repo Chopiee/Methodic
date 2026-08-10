@@ -379,6 +379,27 @@ export const saveIdPrefixSettings = (settings: IdPrefixSettings): void => {
   setStorageItem<IdPrefixSettings>('methodic_id_prefix_settings_v2', settings);
 };
 
+export const parseAnyDate = (str?: string): Date | null => {
+  if (!str) return null;
+  const s = String(str).trim();
+  if (s.includes('-')) {
+    const parts = s.split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      if (parts[0] > 1000) return new Date(parts[0], parts[1] - 1, parts[2]);
+      if (parts[2] > 1000) return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
+  }
+  if (s.includes('/')) {
+    const parts = s.split('/').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      if (parts[2] > 1000) return new Date(parts[2], parts[1] - 1, parts[0]);
+      if (parts[0] > 1000) return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 export const getNextId = (items: { id: string }[], prefix: string): string => {
   let max = 0;
   if (Array.isArray(items)) {
@@ -398,8 +419,8 @@ export const getNextId = (items: { id: string }[], prefix: string): string => {
   return `${prefix}${String(max + 1).padStart(3, '0')}`;
 };
 
-export const getStoredAccounts = (): AccountItem[] => {
-  return getAccountsWithDynamicBalances();
+export const getStoredAccounts = (startDate?: Date, endDate?: Date): AccountItem[] => {
+  return getAccountsWithDynamicBalances(startDate, endDate);
 };
 
 export const saveAccounts = (accounts: AccountItem[]): void => {
@@ -409,13 +430,60 @@ export const saveAccounts = (accounts: AccountItem[]): void => {
 
 export const addAccountAndPropagate = (account: AccountItem) => {
   const customAccounts = getStorageItem<AccountItem[]>('methodic_custom_accounts_v1', []);
+  const initialBal = Number(account.balance) || 0;
   const existingIdx = customAccounts.findIndex(a => a.code === account.code);
+
+  const accountToSave = { ...account, balance: 0 };
+
   if (existingIdx > -1) {
-    customAccounts[existingIdx] = account;
+    customAccounts[existingIdx] = accountToSave;
   } else {
-    customAccounts.push(account);
+    customAccounts.push(accountToSave);
   }
   setStorageItem<AccountItem[]>('methodic_custom_accounts_v1', customAccounts);
+
+  if (initialBal > 0) {
+    const ledger = getStoredLedger();
+    const isDebitNormal = account.normalBal === 'Debit' || ['Aset', 'HPP', 'Beban'].includes(account.category) || ['1', '5', '6'].some(p => account.code.startsWith(p));
+
+    const debitAcc = isDebitNormal ? `${account.code} - ${account.name}` : '3100 - Modal Pemilik';
+    const creditAcc = isDebitNormal ? '3100 - Modal Pemilik' : `${account.code} - ${account.name}`;
+
+    const jvId = `JV-2026-INIT-${account.code}`;
+    const filteredLedger = ledger.filter(l => l.id !== jvId);
+
+    const mapCategory = (cat?: string): 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense' => {
+      if (!cat) return 'Asset';
+      if (cat === 'Liabilitas') return 'Liability';
+      if (cat === 'Ekuitas') return 'Equity';
+      if (cat === 'Pendapatan') return 'Revenue';
+      if (cat === 'Beban' || cat === 'HPP') return 'Expense';
+      return 'Asset';
+    };
+
+    filteredLedger.unshift({
+      id: jvId,
+      date: '2026-01-01',
+      account: debitAcc,
+      category: mapCategory(account.category),
+      description: `Saldo Awal Akun ${account.code} - ${account.name}`,
+      debit: initialBal,
+      credit: '-',
+      status: 'Posted'
+    });
+    filteredLedger.unshift({
+      id: jvId,
+      date: '2026-01-01',
+      account: creditAcc,
+      category: 'Equity',
+      description: `Saldo Awal Akun ${account.code} - ${account.name}`,
+      debit: '-',
+      credit: initialBal,
+      status: 'Posted'
+    });
+    saveLedger(filteredLedger);
+  }
+
   window.dispatchEvent(new Event('accounts-updated'));
 };
 
@@ -1344,335 +1412,323 @@ export const syncCostLedger = (cost: CostItem) => {
  * - Cash, Receivables, Payables, Inventory Assets dynamically calculated!
  */
 export const getDynamicFinancials = (selectedYear: '2026' | '2025', startDate?: Date, endDate?: Date) => {
-  const products = getStoredProducts();
-  let invoices = getStoredInvoices();
-  let costs = getStoredCosts();
-  const partners = getStoredPartners();
-
-  const parseDateStr = (dateStr: string): Date => {
-    const parts = dateStr.split('/').map(Number);
-    let day = parts[0];
-    let month = parts[1];
-    let year = parts[2] || 2026;
-    if (month > 12 && day <= 12) {
-      day = parts[1];
-      month = parts[0];
-    }
-    return new Date(year, month - 1, day);
-  };
-
-  // Pre-process and clean invoices to ensure numbers and normalized properties
-  const cleanedInvoices = invoices.map(inv => {
-    let total = 0;
-    if (typeof inv.total === 'number') {
-      total = inv.total;
-    } else if (typeof inv.total === 'string') {
-      total = Number((inv.total as string).replace(/\./g, '').replace(/,/g, '')) || 0;
-    }
-
-    let remaining = 0;
-    if (typeof inv.remaining === 'number') {
-      remaining = inv.remaining;
-    } else if (typeof inv.remaining === 'string') {
-      remaining = Number((inv.remaining as string).replace(/\./g, '').replace(/,/g, '')) || 0;
-    }
-
-    let isSales = inv.isSales;
-    if (isSales === undefined) {
-      if ((inv as any).distributor || (inv.id && (inv.id.includes('RK') || inv.id.includes('PRC') || inv.id.includes('PUR')))) {
-        isSales = false;
-      } else {
-        isSales = true;
-      }
-    }
-
-    const partnerName = inv.partnerName || (inv as any).distributor || 'Distributor/Customer';
-
-    return {
-      ...inv,
-      total,
-      remaining,
-      isSales,
-      partnerName
-    };
-  });
-
-  if (startDate && endDate) {
-    invoices = cleanedInvoices.filter(inv => {
-      try {
-        const d = parseDateStr(inv.date);
-        return d >= startDate && d <= endDate;
-      } catch (e) {
-        return true;
-      }
-    });
-    costs = costs.filter(c => {
-      try {
-        const d = parseDateStr(c.date);
-        return d >= startDate && d <= endDate;
-      } catch (e) {
-        return true;
-      }
-    });
-  } else {
-    invoices = cleanedInvoices;
-  }
-
-  // If year is 2025, return standard zero figures for new user
   if (selectedYear === '2025') {
     return {
       revenue: 0,
+      revenueDetails: [],
       cogs: 0,
+      cogsDetails: [],
+      openingInventory: 0,
+      totalPurchase: 0,
+      closingInventory: 0,
       operatingExpenses: [],
       otherIncome: 0,
-      assets: {
-        lancar: [],
-        tetap: []
-      },
-      liabilities: {
-        pendek: [],
-        panjang: []
-      },
+      otherIncomeDetails: [],
+      assets: { lancar: [], tetap: [] },
+      liabilities: { pendek: [], panjang: [] },
       equity: []
     };
   }
 
-  // Calculate 2026 dynamically!
-  const accounts = getAccountsWithDynamicBalances();
+  const accounts = getAccountsWithDynamicBalances(startDate, endDate);
 
-  const getBal = (code: string) => accounts.find(a => a.code === code)?.balance || 0;
+  // Revenue Accounts (4xxx or Pendapatan except 4200/Other Income)
+  const revenueAccounts = accounts.filter(
+    a => (a.category === 'Pendapatan' || a.code.startsWith('4')) &&
+         (a.code !== '4200' && a.category !== 'Pendapatan Lainnya' && a.subCategory !== 'Other Income') &&
+         !a.isHeader
+  );
+  const totalSalesRevenue = revenueAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const revenueDetails = revenueAccounts.map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }));
 
-  const totalSalesRevenue = getBal('4100');
-  const otherIncome = getBal('4200');
-  const dynamicCOGS = getBal('5100');
+  // Other Income Accounts (4200 or Pendapatan Lainnya or Other Income)
+  const otherIncomeAccounts = accounts.filter(
+    a => (a.code === '4200' || a.category === 'Pendapatan Lainnya' || a.subCategory === 'Other Income') &&
+         !a.isHeader
+  );
+  const otherIncome = otherIncomeAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const otherIncomeDetails = otherIncomeAccounts.map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }));
 
+  // COGS / HPP Accounts (5xxx or HPP or Beban Pokok Penjualan)
+  const cogsAccounts = accounts.filter(
+    a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.code.startsWith('5')) &&
+         !a.isHeader
+  );
+  const dynamicCOGS = cogsAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const cogsDetails = cogsAccounts.map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }));
+
+  // Operating Expenses (6xxx or Beban)
   const operatingExpenses = accounts
-    .filter(a => a.category === 'Beban' && !a.isHeader)
-    .map(a => ({ name: a.name, amount: a.balance }));
+    .filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.category === 'Beban Operasional' || a.code.startsWith('6')) && !a.isHeader)
+    .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }));
 
   return {
     revenue: totalSalesRevenue,
+    revenueDetails,
     cogs: dynamicCOGS,
+    cogsDetails,
     openingInventory: 0,
     totalPurchase: dynamicCOGS,
     closingInventory: 0,
     operatingExpenses,
     otherIncome,
+    otherIncomeDetails,
     assets: {
       lancar: accounts
-        .filter(a => a.category === 'Aset' && ['Current Asset', 'Cash', 'Bank', 'Receivable', 'Inventory', 'Prepaid'].includes(a.subCategory || '') && !a.isHeader)
-        .map(a => ({ name: a.name, amount: a.balance })),
+        .filter(a => (a.category === 'Aset' || a.code.startsWith('1')) && !a.isHeader && (a.code < '1500' && a.subCategory !== 'Fixed Asset' && a.subCategory !== 'Contra Asset'))
+        .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance })),
       tetap: accounts
-        .filter(a => a.category === 'Aset' && ['Fixed Asset', 'Contra Asset'].includes(a.subCategory || '') && !a.isHeader)
-        .map(a => ({ name: a.name, amount: a.balance }))
+        .filter(a => (a.category === 'Aset' || a.code.startsWith('1')) && !a.isHeader && (a.code >= '1500' || a.subCategory === 'Fixed Asset' || a.subCategory === 'Contra Asset'))
+        .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
     },
     liabilities: {
       pendek: accounts
-        .filter(a => a.category === 'Liabilitas' && !a.isHeader)
-        .map(a => ({ name: a.name, amount: a.balance })),
-      panjang: []
+        .filter(a => (a.category === 'Liabilitas' || a.code.startsWith('2')) && !a.isHeader && (a.code < '2500' && a.subCategory !== 'Long-term Liability' && a.subCategory !== 'Long Term Liability'))
+        .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance })),
+      panjang: accounts
+        .filter(a => (a.category === 'Liabilitas' || a.code.startsWith('2')) && !a.isHeader && (a.code >= '2500' || a.subCategory === 'Long-term Liability' || a.subCategory === 'Long Term Liability'))
+        .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
     },
     equity: accounts
-      .filter(a => a.category === 'Ekuitas' && !a.isHeader)
-      .map(a => ({ name: a.name, amount: a.balance }))
+      .filter(a => (a.category === 'Ekuitas' || a.code.startsWith('3')) && !a.isHeader)
+      .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
   };
 };
 
-export const getAccountsWithDynamicBalances = (): AccountItem[] => {
+export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date): AccountItem[] => {
   const invoices = getStoredInvoices();
   const costs = getStoredCosts();
-  const products = getStoredProducts();
+  const ledger = getStoredLedger();
+  const customAccounts = getStorageItem<AccountItem[]>('methodic_custom_accounts_v1', []);
 
-  const validInvoices = invoices.filter(inv => inv.status !== 'Draft');
-  const salesInvoices = validInvoices.filter(inv => inv.isSales && inv.type === 'Invoice');
-  const purchaseInvoices = validInvoices.filter(inv => !inv.isSales && inv.type === 'Invoice');
+  // Standard base accounts list
+  const baseAccounts: AccountItem[] = [
+    // ASET
+    { code: '1000', name: 'ASET', category: '', subCategory: '', normalBal: 'Debit', level: 1, parent: '', balance: 0, isHeader: true },
+    { code: '1100', name: 'Kas & Setara Kas', category: 'Aset', subCategory: 'Current Asset', normalBal: 'Debit', level: 2, parent: '1000', balance: 0, isHeader: true },
+    { code: '1110', name: 'Kas Kecil', category: 'Aset', subCategory: 'Cash', normalBal: 'Debit', level: 3, parent: '1100', balance: 0 },
+    { code: '1120', name: 'Kas di Toko', category: 'Aset', subCategory: 'Cash', normalBal: 'Debit', level: 3, parent: '1100', balance: 0 },
+    { code: '1130', name: 'Bank BCA', category: 'Aset', subCategory: 'Bank', normalBal: 'Debit', level: 3, parent: '1100', balance: 0 },
+    { code: '1140', name: 'Bank Mandiri', category: 'Aset', subCategory: 'Bank', normalBal: 'Debit', level: 3, parent: '1100', balance: 0 },
+    { code: '1200', name: 'Piutang Usaha', category: 'Aset', subCategory: 'Receivable', normalBal: 'Debit', level: 2, parent: '1000', balance: 0 },
+    { code: '1300', name: 'Persediaan Barang Dagang', category: 'Aset', subCategory: 'Inventory', normalBal: 'Debit', level: 2, parent: '1000', balance: 0 },
+    { code: '1400', name: 'Uang Muka Pembelian', category: 'Aset', subCategory: 'Prepaid', normalBal: 'Debit', level: 2, parent: '1000', balance: 0 },
+    { code: '1500', name: 'Aset Tetap', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 2, parent: '1500', balance: 0, isHeader: true },
+    { code: '1510', name: 'Peralatan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: 0 },
+    { code: '1520', name: 'Kendaraan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: 0 },
+    { code: '1530', name: 'Akumulasi Penyusutan', category: 'Aset', subCategory: 'Contra Asset', normalBal: 'Kredit', level: 3, parent: '1500', balance: 0 },
 
-  // Sales Revenue: sum of all actual Sales invoices
-  let totalSalesRevenue = salesInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    // LIABILITAS
+    { code: '2000', name: 'LIABILITAS', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: 0, isHeader: true },
+    { code: '2100', name: 'Utang Usaha', category: 'Liabilitas', subCategory: 'Current Liability', normalBal: 'Kredit', level: 2, parent: '2000', balance: 0 },
+    { code: '2200', name: 'Utang Pajak', category: 'Liabilitas', subCategory: 'Tax', normalBal: 'Kredit', level: 2, parent: '2000', balance: 0 },
+    { code: '2300', name: 'Utang Gaji', category: 'Liabilitas', subCategory: 'Payroll', normalBal: 'Kredit', level: 2, parent: '2000', balance: 0 },
+    { code: '2400', name: 'Pendapatan Diterima Dimuka', category: 'Liabilitas', subCategory: 'Deferred Revenue', normalBal: 'Kredit', level: 2, parent: '2000', balance: 0 },
 
-  // Total Purchases from Purchase Invoices
-  const totalPurchase = purchaseInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    // EKUITAS
+    { code: '3000', name: 'EKUITAS', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: 0, isHeader: true },
+    { code: '3100', name: 'Modal Pemilik', category: 'Ekuitas', subCategory: 'Capital', normalBal: 'Kredit', level: 2, parent: '3000', balance: 0 },
+    { code: '3200', name: 'Prive', category: 'Ekuitas', subCategory: 'Drawing', normalBal: 'Debit', level: 2, parent: '3000', balance: 0 },
+    { code: '3300', name: 'Laba Ditahan', category: 'Ekuitas', subCategory: 'Retained Earnings', normalBal: 'Kredit', level: 2, parent: '3000', balance: 0 },
+    { code: '3400', name: 'Penghasilan belum teralokasi pada tahun terkini', category: 'Ekuitas', subCategory: 'Current Earnings', normalBal: 'Kredit', level: 2, parent: '3000', balance: 0 },
 
-  // COGS / HPP (Purchases of trade goods recognized directly)
-  let dynamicCOGS = totalPurchase;
+    // PENDAPATAN
+    { code: '4000', name: 'PENDAPATAN', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: 0, isHeader: true },
+    { code: '4100', name: 'Penjualan Produk', category: 'Pendapatan', subCategory: 'Sales', normalBal: 'Kredit', level: 2, parent: '4000', balance: 0 },
+    { code: '4200', name: 'Pendapatan Lain-lain', category: 'Pendapatan', subCategory: 'Other Income', normalBal: 'Kredit', level: 2, parent: '4000', balance: 0 },
 
-  // Receivables & Payables
-  let dynamicReceivables = salesInvoices.reduce((sum, inv) => sum + inv.remaining, 0);
-  let dynamicPayables = purchaseInvoices.reduce((sum, inv) => sum + inv.remaining, 0);
+    // HARGA POKOK PENJUALAN
+    { code: '5000', name: 'HARGA POKOK PENJUALAN', category: '', subCategory: '', normalBal: 'Debit', level: 1, parent: '', balance: 0, isHeader: true },
+    { code: '5100', name: 'Harga Pokok Penjualan', category: 'HPP', subCategory: 'COGS', normalBal: 'Debit', level: 2, parent: '5000', balance: 0 },
 
-  // Inventory value set to 0 (unallocated earnings used in equity)
-  let dynamicInventoryValue = 0;
+    // BEBAN OPERASIONAL
+    { code: '6000', name: 'BEBAN OPERASIONAL', category: '', subCategory: '', normalBal: 'Debit', level: 1, parent: '', balance: 0, isHeader: true },
+    { code: '6100', name: 'Beban Gaji', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6110', name: 'Beban Sewa', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6120', name: 'Beban Listrik & Air', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6130', name: 'Beban Internet', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6140', name: 'Beban Iklan & Promosi', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6150', name: 'Beban Pengiriman', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6160', name: 'Beban Administrasi Bank', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6170', name: 'Beban Penyusutan', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6180', name: 'Beban ATK', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+    { code: '6190', name: 'Beban Lain-lain', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
+  ];
 
-  // Operating costs breakdown based on actual Cost transactions
-  const expenseBalances: Record<string, number> = {
-    '6100': 0, // Beban Gaji
-    '6110': 0, // Beban Sewa
-    '6120': 0, // Beban Listrik & Air
-    '6130': 0, // Beban Internet
-    '6140': 0, // Beban Iklan & Promosi
-    '6150': 0, // Beban Pengiriman
-    '6160': 0, // Beban Administrasi Bank (base)
-    '6170': 0, // Beban Penyusutan (base)
-    '6180': 0, // Beban ATK
-    '6190': 0, // Beban Lain-lain
+  // Merge custom accounts into master account list
+  const masterList: AccountItem[] = baseAccounts.map(b => {
+    const customMatch = customAccounts.find(c => c.code === b.code);
+    if (customMatch) {
+      return {
+        ...b,
+        name: customMatch.name || b.name,
+        category: customMatch.category || b.category,
+        subCategory: customMatch.subCategory || b.subCategory,
+        normalBal: customMatch.normalBal || b.normalBal,
+        balance: customMatch.balance || 0,
+      };
+    }
+    return b;
+  });
+
+  // Append new custom accounts not in base list
+  customAccounts.forEach(c => {
+    if (!masterList.some(m => m.code === c.code)) {
+      masterList.push({ ...c, balance: c.balance || 0 });
+    }
+  });
+
+  // Prepare date limits
+  let startMs = 0;
+  let endMs = Infinity;
+
+  if (startDate) {
+    const s = new Date(startDate);
+    s.setHours(0, 0, 0, 0);
+    startMs = s.getTime();
+  }
+  if (endDate) {
+    const e = new Date(endDate);
+    e.setHours(23, 59, 59, 999);
+    endMs = e.getTime();
+  }
+
+  // Dictionary to accumulate deltas for each account code
+  const accDeltas: Record<string, number> = {};
+
+  const addDelta = (code: string, amount: number) => {
+    accDeltas[code] = (accDeltas[code] || 0) + amount;
   };
 
-  let costPayables = 0; // Utang Usaha from Costs with bayarNanti / Pay Later
-
-  costs.filter(c => c.status !== 'Draft').forEach(c => {
-    // Check if unpaid cost (Pay Later)
-    if (c.bayarNanti || c.method === 'Pay Later (A/P)' || c.method === 'Utang Usaha') {
-      costPayables += c.amount;
+  // Helper to match an account string (code or name) to an account in masterList
+  const findAccountCode = (str?: string): string | null => {
+    if (!str) return null;
+    const cleanStr = String(str).trim();
+    // Try code match e.g. "6100", "6200", "1135" or "6200 - Beban Konsumsi"
+    const codeMatch = cleanStr.match(/^(\d{4})/);
+    if (codeMatch && masterList.some(m => m.code === codeMatch[1])) {
+      return codeMatch[1];
     }
+    // Match exact code
+    const exactCode = masterList.find(m => m.code.toLowerCase() === cleanStr.toLowerCase());
+    if (exactCode) return exactCode.code;
+    // Match exact name
+    const exactName = masterList.find(m => m.name.toLowerCase() === cleanStr.toLowerCase());
+    if (exactName) return exactName.code;
+    // Match string containing name or code
+    const substringMatch = masterList.find(m => cleanStr.toLowerCase().includes(m.name.toLowerCase()) || cleanStr.toLowerCase().includes(m.code.toLowerCase()));
+    if (substringMatch) return substringMatch.code;
 
-    if (c.lineItems && c.lineItems.length > 0) {
-      c.lineItems.forEach(item => {
-        const amt = Number(item.amount) || 0;
-        if (amt <= 0 || !item.account) return;
+    return null;
+  };
 
-        // Extract 4-digit code if present
-        const codeMatch = item.account.match(/^\d{4}/);
-        const code = codeMatch ? codeMatch[0] : null;
+  // 1. Process Invoices
+  const validInvoices = invoices.filter(inv => inv.status !== 'Draft');
+  validInvoices.forEach(inv => {
+    const d = parseAnyDate(inv.date);
+    const ms = d ? d.getTime() : 0;
+    const isSales = inv.isSales;
+    const isPeriodRange = ms >= startMs && ms <= endMs;
+    const isPositionRange = ms <= endMs;
 
-        if (code && expenseBalances[code] !== undefined) {
-          expenseBalances[code] += amt;
-        } else {
-          // Name matching fallback
-          const accLower = item.account.toLowerCase();
-          if (accLower.includes('gaji')) expenseBalances['6100'] += amt;
-          else if (accLower.includes('sewa')) expenseBalances['6110'] += amt;
-          else if (accLower.includes('listrik') || accLower.includes('air')) expenseBalances['6120'] += amt;
-          else if (accLower.includes('internet')) expenseBalances['6130'] += amt;
-          else if (accLower.includes('iklan') || accLower.includes('promosi') || accLower.includes('marketing')) expenseBalances['6140'] += amt;
-          else if (accLower.includes('pengiriman') || accLower.includes('ongkir')) expenseBalances['6150'] += amt;
-          else if (accLower.includes('bank') || accLower.includes('admin')) expenseBalances['6160'] += amt;
-          else if (accLower.includes('penyusutan')) expenseBalances['6170'] += amt;
-          else if (accLower.includes('atk') || accLower.includes('kertas')) expenseBalances['6180'] += amt;
-          else expenseBalances['6190'] += amt;
+    // Sales Invoice
+    if (isSales) {
+      if (isPeriodRange) {
+        addDelta('4100', inv.total || 0); // Sales Revenue
+      }
+      if (isPositionRange) {
+        addDelta('1200', inv.remaining || 0); // Piutang Usaha
+        const paidAmount = (inv.total || 0) - (inv.remaining || 0);
+        if (paidAmount > 0) {
+          const bankCode = findAccountCode(inv.paymentBank) || '1130'; // Bank BCA default or matched
+          addDelta(bankCode, paidAmount);
         }
-      });
+      }
     } else {
-      // Fallback if no line items
-      if (c.category === 'Marketing') expenseBalances['6140'] += c.amount;
-      else if (c.category === 'Procurement') expenseBalances['6150'] += c.amount;
-      else expenseBalances['6190'] += c.amount;
+      // Purchase Invoice
+      if (isPeriodRange) {
+        addDelta('5100', inv.total || 0); // HPP
+      }
+      if (isPositionRange) {
+        addDelta('2100', inv.remaining || 0); // Utang Usaha
+        const paidAmount = (inv.total || 0) - (inv.remaining || 0);
+        if (paidAmount > 0) {
+          const bankCode = findAccountCode(inv.paymentBank) || '1130';
+          addDelta(bankCode, -paidAmount);
+        }
+      }
     }
   });
 
-  const bebanGajiVal = expenseBalances['6100'];
-  const bebanSewaVal = expenseBalances['6110'];
-  const bebanListrikVal = expenseBalances['6120'];
-  const bebanInternetVal = expenseBalances['6130'];
-  const bebanPromosiVal = expenseBalances['6140'];
-  const bebanPengirimanVal = expenseBalances['6150'];
-  const bebanAdminBankVal = expenseBalances['6160'];
-  const bebanPenyusutanVal = expenseBalances['6170'];
-  const bebanATKVal = expenseBalances['6180'];
-  const bebanLainVal = expenseBalances['6190'];
+  // 2. Process Costs
+  const validCosts = costs.filter(c => c.status !== 'Draft');
+  validCosts.forEach(c => {
+    const d = parseAnyDate(c.date);
+    const ms = d ? d.getTime() : 0;
+    const isPeriodRange = ms >= startMs && ms <= endMs;
+    const isPositionRange = ms <= endMs;
 
-  // Bank & Cash Balances
-  let balanceKasKecil = 0;
-  let balanceKasToko = 0;
-  let balanceBca = 0;
-  let balanceMandiri = 0;
+    if (isPeriodRange) {
+      if (c.lineItems && c.lineItems.length > 0) {
+        c.lineItems.forEach(item => {
+          const amt = Number(item.amount) || 0;
+          if (amt <= 0) return;
+          const targetCode = findAccountCode(item.account) || '6190';
+          addDelta(targetCode, amt);
+        });
+      } else {
+        const amt = Number(c.amount) || 0;
+        const targetCode = findAccountCode(c.category) || '6190';
+        addDelta(targetCode, amt);
+      }
+    }
 
-  // Sales payments received
-  salesInvoices.forEach(inv => {
-    const paidAmount = inv.total - inv.remaining;
-    if (paidAmount <= 0) return;
-    const bank = inv.paymentBank || 'BCA';
-    if (bank.includes('BCA')) balanceBca += paidAmount;
-    else if (bank.includes('Mandiri')) balanceMandiri += paidAmount;
-    else if (bank.includes('Kecil') || bank.includes('Cash')) balanceKasKecil += paidAmount;
-    else balanceKasToko += paidAmount;
+    if (isPositionRange) {
+      const amt = Number(c.amount) || 0;
+      if (c.bayarNanti || c.method === 'Pay Later (A/P)' || c.method === 'Utang Usaha') {
+        addDelta('2100', amt); // Utang Usaha
+      } else {
+        const sourceCode = findAccountCode(c.dibayarDari || c.method) || '1130';
+        addDelta(sourceCode, -amt);
+      }
+    }
   });
 
-  // Purchase payments made
-  purchaseInvoices.forEach(inv => {
-    const paidAmount = inv.total - inv.remaining;
-    if (paidAmount <= 0) return;
-    const bank = inv.paymentBank || 'BCA';
-    if (bank.includes('BCA')) balanceBca -= paidAmount;
-    else if (bank.includes('Mandiri')) balanceMandiri -= paidAmount;
-    else if (bank.includes('Kecil')) balanceKasKecil -= paidAmount;
-    else balanceKasToko -= paidAmount;
-  });
-
-  // Costs payments made
-  costs.forEach(c => {
-    if (c.status === 'Draft' || c.bayarNanti || c.method === 'Pay Later (A/P)' || c.method === 'Utang Usaha') return;
-    const amount = c.amount;
-    const source = c.dibayarDari || c.method || 'Cash';
-    if (source.includes('Kas Kecil') || source.includes('1110')) balanceKasKecil -= amount;
-    else if (source.includes('Mandiri') || source.includes('1140')) balanceMandiri -= amount;
-    else if (source.includes('BCA') || source.includes('1130')) balanceBca -= amount;
-    else balanceKasToko -= amount; // Default Kas di Toko
-  });
-
-  // Calculate Ledger (Jurnal Umum / Transaksi Manual) Impact
-  const ledger = getStoredLedger();
+  // 3. Process Manual Journal Entries
   const validLedger = ledger.filter(entry => {
     if (entry.status === 'Draft') return false;
-    // Exclude automatic entries generated by Invoices and Costs to avoid double counting
     if (entry.id.startsWith('JV-2026-INV-') || entry.id.startsWith('JV-2026-SLS-') || entry.id.startsWith('JV-2026-PUR-') || entry.id.startsWith('JV-2026-PAY-') || entry.id.startsWith('JV-2026-CST-')) {
       return false;
     }
-    const d = entry.description || '';
-    if (d.includes('Sales Invoice') || d.includes('Purchase Invoice') || d.startsWith('Pelunasan:') || d.startsWith('Pembayaran:') || d.startsWith('Biaya:') || d.startsWith('Pengeluaran Biaya')) {
+    const desc = entry.description || '';
+    if (desc.includes('Sales Invoice') || desc.includes('Purchase Invoice') || desc.startsWith('Pelunasan:') || desc.startsWith('Pembayaran:') || desc.startsWith('Biaya:') || desc.startsWith('Pengeluaran Biaya')) {
       return false;
     }
     return true;
   });
-  const ledgerDeltas: Record<string, number> = {};
 
   validLedger.forEach(entry => {
-    let code: string | null = null;
-    const match = entry.account.match(/^\d{4}/);
-    if (match) {
-      code = match[0];
-    } else {
-      const accNameLower = entry.account.toLowerCase();
-      if (accNameLower.includes('kas kecil')) code = '1110';
-      else if (accNameLower.includes('kas di toko') || accNameLower.includes('kas toko')) code = '1120';
-      else if (accNameLower.includes('bca')) code = '1130';
-      else if (accNameLower.includes('mandiri')) code = '1140';
-      else if (accNameLower.includes('piutang')) code = '1200';
-      else if (accNameLower.includes('persediaan')) code = '1300';
-      else if (accNameLower.includes('uang muka')) code = '1400';
-      else if (accNameLower.includes('peralatan')) code = '1510';
-      else if (accNameLower.includes('kendaraan')) code = '1520';
-      else if (accNameLower.includes('akumulasi penyusutan')) code = '1530';
-      else if (accNameLower.includes('utang usaha')) code = '2100';
-      else if (accNameLower.includes('utang pajak')) code = '2200';
-      else if (accNameLower.includes('utang gaji')) code = '2300';
-      else if (accNameLower.includes('pendapatan diterima dimuka')) code = '2400';
-      else if (accNameLower.includes('modal')) code = '3100';
-      else if (accNameLower.includes('prive')) code = '3200';
-      else if (accNameLower.includes('laba ditahan')) code = '3300';
-      else if (accNameLower.includes('penjualan')) code = '4100';
-      else if (accNameLower.includes('pendapatan lain')) code = '4200';
-      else if (accNameLower.includes('hpp') || accNameLower.includes('harga pokok')) code = '5100';
-      else if (accNameLower.includes('gaji')) code = '6100';
-      else if (accNameLower.includes('sewa')) code = '6110';
-      else if (accNameLower.includes('listrik') || accNameLower.includes('air')) code = '6120';
-      else if (accNameLower.includes('internet')) code = '6130';
-      else if (accNameLower.includes('iklan') || accNameLower.includes('promosi')) code = '6140';
-      else if (accNameLower.includes('pengiriman')) code = '6150';
-      else if (accNameLower.includes('bank') || accNameLower.includes('admin')) code = '6160';
-      else if (accNameLower.includes('penyusutan')) code = '6170';
-      else if (accNameLower.includes('atk')) code = '6180';
-      else if (accNameLower.includes('lain')) code = '6190';
-    }
+    const d = parseAnyDate(entry.date);
+    const ms = d ? d.getTime() : 0;
 
-    if (!code) return;
+    const accCode = findAccountCode(entry.account);
+    if (!accCode) return;
+
+    const accObj = masterList.find(m => m.code === accCode);
+    const isFlowAccount = accCode.startsWith('4') || accCode.startsWith('5') || accCode.startsWith('6') || (accObj && ['Pendapatan', 'HPP', 'Beban'].includes(accObj.category));
+
+    const inRange = isFlowAccount ? (ms >= startMs && ms <= endMs) : (ms <= endMs);
+    if (!inRange) return;
 
     const debitVal = typeof entry.debit === 'number' ? entry.debit : 0;
     const creditVal = typeof entry.credit === 'number' ? entry.credit : 0;
 
+    const normalBal = accObj?.normalBal || (accCode.startsWith('1') || accCode.startsWith('5') || accCode.startsWith('6') ? 'Debit' : 'Kredit');
+
     let impact = 0;
-    if (code.startsWith('1') || code.startsWith('5') || code.startsWith('6') || code === '3200') {
-      if (code === '1530') {
-        impact = creditVal - debitVal;
+    if (normalBal === 'Debit') {
+      if (accCode === '1530') {
+        impact = creditVal - debitVal; // Contra Asset
       } else {
         impact = debitVal - creditVal;
       }
@@ -1680,130 +1736,79 @@ export const getAccountsWithDynamicBalances = (): AccountItem[] => {
       impact = creditVal - debitVal;
     }
 
-    ledgerDeltas[code] = (ledgerDeltas[code] || 0) + impact;
+    addDelta(accCode, impact);
   });
 
-  // Apply ledger deltas to account variables
-  balanceKasKecil += (ledgerDeltas['1110'] || 0);
-  balanceKasToko += (ledgerDeltas['1120'] || 0);
-  balanceBca += (ledgerDeltas['1130'] || 0);
-  balanceMandiri += (ledgerDeltas['1140'] || 0);
-
-  dynamicReceivables += (ledgerDeltas['1200'] || 0);
-  dynamicInventoryValue += (ledgerDeltas['1300'] || 0);
-  const uangMukaVal = (ledgerDeltas['1400'] || 0);
-
-  const peralatanVal = (ledgerDeltas['1510'] || 0);
-  const kendaraanVal = (ledgerDeltas['1520'] || 0);
-  const akumulasiPenyusutanVal = (ledgerDeltas['1530'] || 0);
-  const asetTetapTotal = peralatanVal + kendaraanVal - akumulasiPenyusutanVal;
-
-  dynamicPayables += (ledgerDeltas['2100'] || 0);
-  const utangPajakVal = (ledgerDeltas['2200'] || 0);
-  const utangGajiVal = (ledgerDeltas['2300'] || 0);
-  const pendapatanDiterimaDimukaVal = (ledgerDeltas['2400'] || 0);
-
-  const modalPemilikVal = (ledgerDeltas['3100'] || 0);
-  const priveVal = (ledgerDeltas['3200'] || 0);
-  const labaDitahanVal = (ledgerDeltas['3300'] || 0);
-
-  totalSalesRevenue += (ledgerDeltas['4100'] || 0);
-  const otherIncome = (ledgerDeltas['4200'] || 0);
-
-  dynamicCOGS += (ledgerDeltas['5100'] || 0);
-
-  expenseBalances['6100'] += (ledgerDeltas['6100'] || 0);
-  expenseBalances['6110'] += (ledgerDeltas['6110'] || 0);
-  expenseBalances['6120'] += (ledgerDeltas['6120'] || 0);
-  expenseBalances['6130'] += (ledgerDeltas['6130'] || 0);
-  expenseBalances['6140'] += (ledgerDeltas['6140'] || 0);
-  expenseBalances['6150'] += (ledgerDeltas['6150'] || 0);
-  expenseBalances['6160'] += (ledgerDeltas['6160'] || 0);
-  expenseBalances['6170'] += (ledgerDeltas['6170'] || 0);
-  expenseBalances['6180'] += (ledgerDeltas['6180'] || 0);
-  expenseBalances['6190'] += (ledgerDeltas['6190'] || 0);
-
-  const kasDanSetaraKasTotal = balanceKasKecil + balanceKasToko + balanceBca + balanceMandiri;
-  const totalAsetVal = kasDanSetaraKasTotal + dynamicReceivables + dynamicInventoryValue + uangMukaVal + asetTetapTotal;
-
-  const totalLiabilitasVal = dynamicPayables + costPayables + utangPajakVal + utangGajiVal + pendapatanDiterimaDimukaVal;
-  const totalPendapatanVal = totalSalesRevenue + otherIncome;
-  const totalHPPVal = dynamicCOGS;
-  const totalBebanOperasionalVal = bebanGajiVal + bebanSewaVal + bebanListrikVal + bebanInternetVal + bebanPromosiVal + bebanPengirimanVal + bebanAdminBankVal + bebanPenyusutanVal + bebanATKVal + bebanLainVal +
-    (ledgerDeltas['6100']||0) + (ledgerDeltas['6110']||0) + (ledgerDeltas['6120']||0) + (ledgerDeltas['6130']||0) + (ledgerDeltas['6140']||0) + (ledgerDeltas['6150']||0) + (ledgerDeltas['6160']||0) + (ledgerDeltas['6170']||0) + (ledgerDeltas['6180']||0) + (ledgerDeltas['6190']||0);
-  
-  const unallocatedCurrentEarnings = totalPendapatanVal - totalHPPVal - totalBebanOperasionalVal;
-  const totalEkuitasVal = modalPemilikVal - priveVal + labaDitahanVal + unallocatedCurrentEarnings;
-
-  const exactAccountsFromImage: AccountItem[] = [
-    // ASET
-    { code: '1000', name: 'ASET', category: '', subCategory: '', normalBal: 'Debit', level: 1, parent: '', balance: totalAsetVal, isHeader: true },
-    { code: '1100', name: 'Kas & Setara Kas', category: 'Aset', subCategory: 'Current Asset', normalBal: 'Debit', level: 2, parent: '1000', balance: kasDanSetaraKasTotal, isHeader: true },
-    { code: '1110', name: 'Kas Kecil', category: 'Aset', subCategory: 'Cash', normalBal: 'Debit', level: 3, parent: '1100', balance: balanceKasKecil },
-    { code: '1120', name: 'Kas di Toko', category: 'Aset', subCategory: 'Cash', normalBal: 'Debit', level: 3, parent: '1100', balance: balanceKasToko },
-    { code: '1130', name: 'Bank BCA', category: 'Aset', subCategory: 'Bank', normalBal: 'Debit', level: 3, parent: '1100', balance: balanceBca },
-    { code: '1140', name: 'Bank Mandiri', category: 'Aset', subCategory: 'Bank', normalBal: 'Debit', level: 3, parent: '1100', balance: balanceMandiri },
-    { code: '1200', name: 'Piutang Usaha', category: 'Aset', subCategory: 'Receivable', normalBal: 'Debit', level: 2, parent: '1000', balance: dynamicReceivables },
-    { code: '1300', name: 'Persediaan Barang Dagang', category: 'Aset', subCategory: 'Inventory', normalBal: 'Debit', level: 2, parent: '1000', balance: dynamicInventoryValue },
-    { code: '1400', name: 'Uang Muka Pembelian', category: 'Aset', subCategory: 'Prepaid', normalBal: 'Debit', level: 2, parent: '1000', balance: uangMukaVal },
-    { code: '1500', name: 'Aset Tetap', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 2, parent: '1000', balance: asetTetapTotal, isHeader: true },
-    { code: '1510', name: 'Peralatan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: peralatanVal },
-    { code: '1520', name: 'Kendaraan', category: 'Aset', subCategory: 'Fixed Asset', normalBal: 'Debit', level: 3, parent: '1500', balance: kendaraanVal },
-    { code: '1530', name: 'Akumulasi Penyusutan', category: 'Aset', subCategory: 'Contra Asset', normalBal: 'Kredit', level: 3, parent: '1500', balance: akumulasiPenyusutanVal },
-
-    // LIABILITAS
-    { code: '2000', name: 'LIABILITAS', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: totalLiabilitasVal, isHeader: true },
-    { code: '2100', name: 'Utang Usaha', category: 'Liabilitas', subCategory: 'Current Liability', normalBal: 'Kredit', level: 2, parent: '2000', balance: dynamicPayables + costPayables },
-    { code: '2200', name: 'Utang Pajak', category: 'Liabilitas', subCategory: 'Tax', normalBal: 'Kredit', level: 2, parent: '2000', balance: utangPajakVal },
-    { code: '2300', name: 'Utang Gaji', category: 'Liabilitas', subCategory: 'Payroll', normalBal: 'Kredit', level: 2, parent: '2000', balance: utangGajiVal },
-    { code: '2400', name: 'Pendapatan Diterima Dimuka', category: 'Liabilitas', subCategory: 'Deferred Revenue', normalBal: 'Kredit', level: 2, parent: '2000', balance: pendapatanDiterimaDimukaVal },
-
-    // EKUITAS
-    { code: '3000', name: 'EKUITAS', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: totalEkuitasVal, isHeader: true },
-    { code: '3100', name: 'Modal Pemilik', category: 'Ekuitas', subCategory: 'Capital', normalBal: 'Kredit', level: 2, parent: '3000', balance: modalPemilikVal },
-    { code: '3200', name: 'Prive', category: 'Ekuitas', subCategory: 'Drawing', normalBal: 'Debit', level: 2, parent: '3000', balance: priveVal },
-    { code: '3300', name: 'Laba Ditahan', category: 'Ekuitas', subCategory: 'Retained Earnings', normalBal: 'Kredit', level: 2, parent: '3000', balance: labaDitahanVal },
-    { code: '3400', name: 'Penghasilan belum teralokasi pada tahun terkini', category: 'Ekuitas', subCategory: 'Current Earnings', normalBal: 'Kredit', level: 2, parent: '3000', balance: unallocatedCurrentEarnings },
-
-    // PENDAPATAN
-    { code: '4000', name: 'PENDAPATAN', category: '', subCategory: '', normalBal: 'Kredit', level: 1, parent: '', balance: totalPendapatanVal, isHeader: true },
-    { code: '4100', name: 'Penjualan Produk', category: 'Pendapatan', subCategory: 'Sales', normalBal: 'Kredit', level: 2, parent: '4000', balance: totalSalesRevenue },
-    { code: '4200', name: 'Pendapatan Lain-lain', category: 'Pendapatan', subCategory: 'Other Income', normalBal: 'Kredit', level: 2, parent: '4000', balance: 0 },
-
-    // HARGA POKOK PENJUALAN
-    { code: '5000', name: 'HARGA POKOK PENJUALAN', category: '', subCategory: '', normalBal: 'Debit', level: 1, parent: '', balance: totalHPPVal, isHeader: true },
-    { code: '5100', name: 'Harga Pokok Penjualan', category: 'HPP', subCategory: 'COGS', normalBal: 'Debit', level: 2, parent: '5000', balance: dynamicCOGS },
-
-    // BEBAN OPERASIONAL
-    { code: '6000', name: 'BEBAN OPERASIONAL', category: '', subCategory: '', normalBal: 'Debit', level: 1, parent: '', balance: totalBebanOperasionalVal, isHeader: true },
-    { code: '6100', name: 'Beban Gaji', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanGajiVal },
-    { code: '6110', name: 'Beban Sewa', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanSewaVal },
-    { code: '6120', name: 'Beban Listrik & Air', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanListrikVal },
-    { code: '6130', name: 'Beban Internet', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanInternetVal },
-    { code: '6140', name: 'Beban Iklan & Promosi', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanPromosiVal },
-    { code: '6150', name: 'Beban Pengiriman', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanPengirimanVal },
-    { code: '6160', name: 'Beban Administrasi Bank', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanAdminBankVal },
-    { code: '6170', name: 'Beban Penyusutan', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanPenyusutanVal },
-    { code: '6180', name: 'Beban ATK', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanATKVal },
-    { code: '6190', name: 'Beban Lain-lain', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: bebanLainVal },
-  ];
-
-  // User created custom accounts & overrides
-  const customAccounts = getStorageItem<AccountItem[]>('methodic_custom_accounts_v1', []);
-  const baseWithOverrides = exactAccountsFromImage.map(baseAcc => {
-    const override = customAccounts.find(c => c.code === baseAcc.code);
-    if (override) {
-      return {
-        ...baseAcc,
-        name: override.name,
-        category: override.category || baseAcc.category,
-        subCategory: override.subCategory || baseAcc.subCategory,
-        normalBal: override.normalBal || baseAcc.normalBal,
-      };
+  // Update Detail Account Balances with Deltas
+  masterList.forEach(acc => {
+    if (!acc.isHeader) {
+      const delta = accDeltas[acc.code] || 0;
+      acc.balance = (acc.balance || 0) + delta;
     }
-    return baseAcc;
   });
-  const customOnly = customAccounts.filter(c => !exactAccountsFromImage.some(b => b.code === c.code));
 
-  return [...baseWithOverrides, ...customOnly];
+  // Helper to sum children
+  const sumChildren = (parentCode: string): number => {
+    return masterList
+      .filter(a => a.parent === parentCode && !a.isHeader)
+      .reduce((sum, a) => sum + (a.balance || 0), 0);
+  };
+
+  // Header Account Calculations
+  const kasDanSetaraKasTotal = sumChildren('1100') || (masterList.find(a => a.code === '1110')?.balance || 0) + (masterList.find(a => a.code === '1120')?.balance || 0) + (masterList.find(a => a.code === '1130')?.balance || 0) + (masterList.find(a => a.code === '1140')?.balance || 0);
+  const h1100 = masterList.find(a => a.code === '1100');
+  if (h1100) h1100.balance = kasDanSetaraKasTotal;
+
+  const asetTetapTotal = (masterList.find(a => a.code === '1510')?.balance || 0) + (masterList.find(a => a.code === '1520')?.balance || 0) - (masterList.find(a => a.code === '1530')?.balance || 0);
+  const h1500 = masterList.find(a => a.code === '1500');
+  if (h1500) h1500.balance = asetTetapTotal;
+
+  // Calculate ASET (1000)
+  const totalAset = masterList
+    .filter(a => (a.category === 'Aset' || a.code.startsWith('1')) && !a.isHeader)
+    .reduce((sum, a) => sum + (a.code === '1530' ? -Math.abs(a.balance) : a.balance), 0);
+  const h1000 = masterList.find(a => a.code === '1000');
+  if (h1000) h1000.balance = totalAset;
+
+  // Calculate LIABILITAS (2000)
+  const totalLiabilitas = masterList
+    .filter(a => (a.category === 'Liabilitas' || a.code.startsWith('2')) && !a.isHeader)
+    .reduce((sum, a) => sum + a.balance, 0);
+  const h2000 = masterList.find(a => a.code === '2000');
+  if (h2000) h2000.balance = totalLiabilitas;
+
+  // Calculate PENDAPATAN (4000)
+  const totalPendapatan = masterList
+    .filter(a => (a.category === 'Pendapatan' || a.code.startsWith('4')) && !a.isHeader)
+    .reduce((sum, a) => sum + a.balance, 0);
+  const h4000 = masterList.find(a => a.code === '4000');
+  if (h4000) h4000.balance = totalPendapatan;
+
+  // Calculate HARGA POKOK PENJUALAN (5000)
+  const totalHPP = masterList
+    .filter(a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.code.startsWith('5')) && !a.isHeader)
+    .reduce((sum, a) => sum + a.balance, 0);
+  const h5000 = masterList.find(a => a.code === '5000');
+  if (h5000) h5000.balance = totalHPP;
+
+  // Calculate BEBAN OPERASIONAL (6000)
+  const totalBebanOperasional = masterList
+    .filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.code.startsWith('6')) && !a.isHeader)
+    .reduce((sum, a) => sum + a.balance, 0);
+  const h6000 = masterList.find(a => a.code === '6000');
+  if (h6000) h6000.balance = totalBebanOperasional;
+
+  // Calculate Current Earnings (3400)
+  const unallocatedCurrentEarnings = totalPendapatan - totalHPP - totalBebanOperasional;
+  const acc3400 = masterList.find(a => a.code === '3400');
+  if (acc3400) acc3400.balance = unallocatedCurrentEarnings;
+
+  // Calculate EKUITAS (3000)
+  const totalEkuitas = masterList
+    .filter(a => (a.category === 'Ekuitas' || a.code.startsWith('3')) && !a.isHeader)
+    .reduce((sum, a) => sum + (a.code === '3200' ? -Math.abs(a.balance) : a.balance), 0);
+  const h3000 = masterList.find(a => a.code === '3000');
+  if (h3000) h3000.balance = totalEkuitas;
+
+  return masterList;
 };
