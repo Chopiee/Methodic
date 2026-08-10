@@ -410,9 +410,10 @@ export const parseAnyDate = (val?: string | Date | null): Date | null => {
       const p2 = Number(parts[2]);
       if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
         if (p2 > 1000) {
-          if (p0 > 12) return new Date(p2, p1 - 1, p0); // DD/MM/YYYY
-          if (p1 > 12) return new Date(p2, p0 - 1, p1); // MM/DD/YYYY
-          return new Date(p2, p0 - 1, p1); // MM/DD/YYYY default for InvoiceItem
+          // If p1 > 12, then p1 cannot be a month, so format is MM/DD/YYYY (p0 = month, p1 = day)
+          if (p1 > 12) return new Date(p2, p0 - 1, p1);
+          // Standard app format for slash dates is DD/MM/YYYY (p0 = day, p1 = month)
+          return new Date(p2, p1 - 1, p0);
         }
         if (p0 > 1000) {
           return new Date(p0, p1 - 1, p2);
@@ -984,7 +985,8 @@ export const registerNewInvoice = (invoice: Omit<InvoiceItem, 'status'> & { stat
     }
 
     // 3. Accounting Ledger Entry
-    const dateFormatted = new Date(invoice.date).toLocaleDateString('id-ID', {
+    const dateParsed = parseAnyDate(invoice.date) || new Date();
+    const dateFormatted = dateParsed.toLocaleDateString('id-ID', {
       day: 'numeric',
       month: 'long',
       year: 'numeric'
@@ -1207,7 +1209,8 @@ export const updateInvoice = (updatedInvoice: Omit<InvoiceItem, 'status'> & { st
   const filteredLedger = ledger.filter(l => !l.description.includes(originalInvoice.id));
   
   if (fullUpdatedInvoice.type === 'Invoice') {
-    const dateFormatted = new Date(fullUpdatedInvoice.date).toLocaleDateString('id-ID', {
+    const dateParsed = parseAnyDate(fullUpdatedInvoice.date) || new Date();
+    const dateFormatted = dateParsed.toLocaleDateString('id-ID', {
       day: 'numeric',
       month: 'long',
       year: 'numeric'
@@ -1643,8 +1646,14 @@ export const getDynamicFinancials = (selectedYear: '2026' | '2025', startDate?: 
          (a.code !== '4200' && a.category !== 'Pendapatan Lainnya' && a.subCategory !== 'Other Income') &&
          !a.isHeader
   );
-  const totalSalesRevenue = revenueAccounts.reduce((sum, a) => sum + a.balance, 0);
-  const revenueDetails = revenueAccounts.map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }));
+  const totalSalesRevenue = revenueAccounts.reduce((sum, a) => {
+    const isContra = a.normalBal === 'Debit' || a.name.toLowerCase().includes('retur') || a.name.toLowerCase().includes('potongan');
+    return sum + (isContra ? -Math.abs(a.balance) : a.balance);
+  }, 0);
+  const revenueDetails = revenueAccounts.map(a => {
+    const isContra = a.normalBal === 'Debit' || a.name.toLowerCase().includes('retur') || a.name.toLowerCase().includes('potongan');
+    return { name: `${a.code} - ${a.name}`, amount: isContra ? -Math.abs(a.balance) : a.balance };
+  });
 
   // Other Income Accounts (4200 or Pendapatan Lainnya or Other Income)
   const otherIncomeAccounts = accounts.filter(
@@ -1659,8 +1668,14 @@ export const getDynamicFinancials = (selectedYear: '2026' | '2025', startDate?: 
     a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.code.startsWith('5')) &&
          !a.isHeader
   );
-  const dynamicCOGS = cogsAccounts.reduce((sum, a) => sum + a.balance, 0);
-  const cogsDetails = cogsAccounts.map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }));
+  const dynamicCOGS = cogsAccounts.reduce((sum, a) => {
+    const isContra = a.normalBal === 'Kredit' || a.name.toLowerCase().includes('retur') || a.name.toLowerCase().includes('potongan');
+    return sum + (isContra ? -Math.abs(a.balance) : a.balance);
+  }, 0);
+  const cogsDetails = cogsAccounts.map(a => {
+    const isContra = a.normalBal === 'Kredit' || a.name.toLowerCase().includes('retur') || a.name.toLowerCase().includes('potongan');
+    return { name: `${a.code} - ${a.name}`, amount: isContra ? -Math.abs(a.balance) : a.balance };
+  });
 
   // Operating Expenses (6xxx or Beban)
   const operatingExpenses = accounts
@@ -1760,7 +1775,7 @@ export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date)
     { code: '6190', name: 'Beban Lain-lain', category: 'Beban', subCategory: 'Operating Expense', normalBal: 'Debit', level: 2, parent: '6000', balance: 0 },
   ];
 
-  // Merge custom accounts into master account list
+  // Merge custom accounts into master account list (initialize balance to 0 so deltas add cleanly)
   const masterList: AccountItem[] = baseAccounts.map(b => {
     const customMatch = customAccounts.find(c => c.code === b.code);
     if (customMatch) {
@@ -1770,7 +1785,7 @@ export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date)
         category: customMatch.category || b.category,
         subCategory: customMatch.subCategory || b.subCategory,
         normalBal: customMatch.normalBal || b.normalBal,
-        balance: customMatch.balance || 0,
+        balance: 0,
       };
     }
     return b;
@@ -1779,7 +1794,7 @@ export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date)
   // Append new custom accounts not in base list
   customAccounts.forEach(c => {
     if (!masterList.some(m => m.code === c.code)) {
-      masterList.push({ ...c, balance: c.balance || 0 });
+      masterList.push({ ...c, balance: 0 });
     }
   });
 
@@ -1836,30 +1851,54 @@ export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date)
     const isPeriodRange = ms >= startMs && ms <= endMs;
     const isPositionRange = ms <= endMs;
 
-    // Sales Invoice
+    // Sales Invoice / Return
     if (isSales) {
-      if (isPeriodRange) {
-        addDelta('4100', inv.total || 0); // Sales Revenue
-      }
-      if (isPositionRange) {
-        addDelta('1200', inv.remaining || 0); // Piutang Usaha
-        const paidAmount = (inv.total || 0) - (inv.remaining || 0);
-        if (paidAmount > 0) {
-          const bankCode = findAccountCode(inv.paymentBank) || '1130'; // Bank BCA default or matched
-          addDelta(bankCode, paidAmount);
+      if (inv.type === 'Return') {
+        if (isPeriodRange) {
+          const retCode = findAccountCode((inv as any).customDebitAccount) || '4110';
+          addDelta(retCode, Math.abs(inv.total || 0)); // Sales Return is debit (contra-revenue)
+        }
+        if (isPositionRange) {
+          const bankOrPiutang = inv.remaining > 0 ? '1200' : (findAccountCode(inv.paymentBank) || '1130');
+          addDelta(bankOrPiutang, -(inv.total || 0));
+        }
+      } else {
+        if (isPeriodRange) {
+          const revCode = findAccountCode((inv as any).customCreditAccount) || '4100';
+          addDelta(revCode, inv.total || 0); // Sales Revenue
+        }
+        if (isPositionRange) {
+          addDelta('1200', inv.remaining || 0); // Piutang Usaha
+          const paidAmount = (inv.total || 0) - (inv.remaining || 0);
+          if (paidAmount > 0) {
+            const bankCode = findAccountCode(inv.paymentBank) || '1130';
+            addDelta(bankCode, paidAmount);
+          }
         }
       }
     } else {
-      // Purchase Invoice
-      if (isPeriodRange) {
-        addDelta('5100', inv.total || 0); // HPP
-      }
-      if (isPositionRange) {
-        addDelta('2100', inv.remaining || 0); // Utang Usaha
-        const paidAmount = (inv.total || 0) - (inv.remaining || 0);
-        if (paidAmount > 0) {
-          const bankCode = findAccountCode(inv.paymentBank) || '1130';
-          addDelta(bankCode, -paidAmount);
+      // Purchase Invoice / Return
+      if (inv.type === 'Return') {
+        if (isPeriodRange) {
+          const retCode = findAccountCode((inv as any).customCreditAccount) || '5110';
+          addDelta(retCode, Math.abs(inv.total || 0)); // Purchase Return is credit (contra-HPP)
+        }
+        if (isPositionRange) {
+          const bankOrUtang = inv.remaining > 0 ? '2100' : (findAccountCode(inv.paymentBank) || '1130');
+          addDelta(bankOrUtang, -(inv.total || 0));
+        }
+      } else {
+        if (isPeriodRange) {
+          const cogsCode = findAccountCode((inv as any).customDebitAccount) || '5100';
+          addDelta(cogsCode, inv.total || 0); // HPP / Purchases
+        }
+        if (isPositionRange) {
+          addDelta('2100', inv.remaining || 0); // Utang Usaha
+          const paidAmount = (inv.total || 0) - (inv.remaining || 0);
+          if (paidAmount > 0) {
+            const bankCode = findAccountCode(inv.paymentBank) || '1130';
+            addDelta(bankCode, -paidAmount);
+          }
         }
       }
     }
