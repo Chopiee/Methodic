@@ -10,6 +10,7 @@ import {
   getStoredInvoices,
   getStoredCosts,
   addManualTransaction,
+  deleteJournalTransaction,
   AccountItem, 
   JournalEntry,
   InvoiceItem,
@@ -56,7 +57,8 @@ import {
   ArrowDownRight,
   ShoppingBag,
   ShoppingCart,
-  Wallet
+  Wallet,
+  Trash2
 } from 'lucide-react';
 
 export interface UnifiedTransaction {
@@ -327,10 +329,22 @@ export function Accounting() {
   const [ledger, setLedger] = useState<JournalEntry[]>(() => getStoredLedger());
   const [unifiedTxList, setUnifiedTxList] = useState<UnifiedTransaction[]>(() => buildUnifiedTransactions());
 
-  // Jurnal Umum Filter States
+  // Jurnal Umum Filter & Deletion States
   const [jurnalSearch, setJurnalSearch] = useState('');
   const [jurnalStartDate, setJurnalStartDate] = useState('');
   const [jurnalEndDate, setJurnalEndDate] = useState('');
+  const [deleteConfirmTx, setDeleteConfirmTx] = useState<{ id: string; date: string; account: string; debit: number | string; credit: number | string; index: number } | null>(null);
+  const [deleteSuccessMsg, setDeleteSuccessMsg] = useState('');
+
+  const handleDeleteJurnalTx = () => {
+    if (!deleteConfirmTx) return;
+    deleteJournalTransaction(deleteConfirmTx.id, deleteConfirmTx.index);
+    setLedger(getStoredLedger());
+    setUnifiedTxList(buildUnifiedTransactions());
+    setDeleteSuccessMsg(`Transaksi Jurnal ${deleteConfirmTx.id || deleteConfirmTx.account} berhasil dihapus. Laporan keuangan telah diperbarui.`);
+    setDeleteConfirmTx(null);
+    setTimeout(() => setDeleteSuccessMsg(''), 4000);
+  };
 
   // Jurnal Range Date Picker States (Purchase-style)
   const [jurnalRangeStart, setJurnalRangeStart] = useState<Date>(() => new Date(2026, 0, 1));
@@ -1409,6 +1423,19 @@ export function Accounting() {
               </div>
             </div>
 
+            {/* Delete Success Alert */}
+            {deleteSuccessMsg && (
+              <div className="bg-[#10B981]/10 border border-[#10B981]/20 text-[#10B981] text-xs px-4 py-3 rounded-xl flex items-center justify-between shadow-lg">
+                <div className="flex items-center gap-2">
+                  <CheckCircle size={15} />
+                  <span>{deleteSuccessMsg}</span>
+                </div>
+                <button onClick={() => setDeleteSuccessMsg('')} className="cursor-pointer text-[#10B981] hover:text-white">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
             {/* Table */}
             <div className="border border-[#27272A] rounded-2xl bg-[#121214] overflow-hidden shadow-xl">
               <table className="w-full text-left border-collapse">
@@ -1421,6 +1448,7 @@ export function Accounting() {
                     <th className="py-3.5 px-4 text-right">Debit</th>
                     <th className="py-3.5 px-4 text-right">Kredit</th>
                     <th className="py-3.5 px-4 text-center w-24">Status</th>
+                    <th className="py-3.5 px-4 text-center w-20">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#27272A]/60 text-xs">
@@ -1442,11 +1470,27 @@ export function Accounting() {
                             {entry.status}
                           </span>
                         </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={() => setDeleteConfirmTx({
+                              id: entry.id,
+                              date: entry.date,
+                              account: entry.account,
+                              debit: entry.debit,
+                              credit: entry.credit,
+                              index
+                            })}
+                            className="p-1.5 hover:bg-red-500/10 text-[#71717A] hover:text-red-400 rounded-lg transition-colors cursor-pointer"
+                            title="Hapus Transaksi Jurnal"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-xs text-[#71717A]">
+                      <td colSpan={8} className="py-12 text-center text-xs text-[#71717A]">
                         Tidak ada transaksi jurnal umum yang cocok dengan filter pencarian.
                       </td>
                     </tr>
@@ -1454,6 +1498,75 @@ export function Accounting() {
                 </tbody>
               </table>
             </div>
+
+            {/* Modal Delete Confirmation */}
+            {deleteConfirmTx && (
+              <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-[#121214] border border-[#27272A] rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in duration-150">
+                  <div className="flex items-center justify-between border-b border-[#27272A] pb-3">
+                    <div className="flex items-center gap-2.5 text-red-400 font-semibold text-sm">
+                      <Trash2 size={18} />
+                      <span>Konfirmasi Hapus Transaksi</span>
+                    </div>
+                    <button
+                      onClick={() => setDeleteConfirmTx(null)}
+                      className="text-[#71717A] hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 text-xs text-[#D4D4D8]">
+                    <p>Apakah Anda yakin ingin menghapus entri jurnal ini?</p>
+                    <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-3 space-y-1.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-[#71717A]">Ref ID:</span>
+                        <span className="font-mono text-white font-medium">{deleteConfirmTx.id || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#71717A]">Tanggal:</span>
+                        <span className="text-white">{deleteConfirmTx.date}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#71717A]">Akun:</span>
+                        <span className="text-white font-medium">{deleteConfirmTx.account}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#71717A]">Nominal:</span>
+                        <span className="text-[#10B981] font-semibold">
+                          {typeof deleteConfirmTx.debit === 'number' && deleteConfirmTx.debit > 0
+                            ? `Debit Rp ${deleteConfirmTx.debit.toLocaleString('id-ID')}`
+                            : typeof deleteConfirmTx.credit === 'number' && deleteConfirmTx.credit > 0
+                            ? `Kredit Rp ${deleteConfirmTx.credit.toLocaleString('id-ID')}`
+                            : '-'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-[#A1A1AA] italic bg-amber-500/10 border border-amber-500/20 text-amber-300 p-2.5 rounded-lg">
+                      ⚠️ Menghapus transaksi ini akan membatalkan pengaruhnya terhadap saldo akun, Laba Rugi, dan Neraca secara otomatis.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirmTx(null)}
+                      className="px-4 py-2 bg-[#27272A] hover:bg-[#3F3F46] text-[#A1A1AA] hover:text-white rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteJurnalTx}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 shadow-lg shadow-red-600/20"
+                    >
+                      <Trash2 size={13} />
+                      <span>Ya, Hapus Transaksi</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}

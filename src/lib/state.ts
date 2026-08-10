@@ -1297,6 +1297,40 @@ export const deleteCost = (costId: string) => {
   const ledger = getStoredLedger();
   const filteredLedger = ledger.filter(l => !l.description.includes(costId));
   saveLedger(filteredLedger);
+  window.dispatchEvent(new Event('ledger-updated'));
+  window.dispatchEvent(new Event('accounts-updated'));
+};
+
+export const deleteJournalTransaction = (id: string, entryIndex?: number) => {
+  const ledger = getStoredLedger();
+  let filteredLedger: JournalEntry[];
+
+  if (id && id.trim()) {
+    filteredLedger = ledger.filter(l => l.id !== id);
+  } else if (typeof entryIndex === 'number' && entryIndex >= 0) {
+    filteredLedger = ledger.filter((_, idx) => idx !== entryIndex);
+  } else {
+    filteredLedger = ledger;
+  }
+
+  saveLedger(filteredLedger);
+
+  if (id && id.trim()) {
+    const invoices = getStoredInvoices();
+    if (invoices.some(inv => inv.id === id)) {
+      saveInvoices(invoices.filter(inv => inv.id !== id));
+      window.dispatchEvent(new Event('invoices-updated'));
+    }
+
+    const costs = getStoredCosts();
+    if (costs.some(c => c.id === id)) {
+      saveCosts(costs.filter(c => c.id !== id));
+      window.dispatchEvent(new Event('costs-updated'));
+    }
+  }
+
+  window.dispatchEvent(new Event('ledger-updated'));
+  window.dispatchEvent(new Event('accounts-updated'));
 };
 
 export const syncCostLedger = (cost: CostItem) => {

@@ -142,7 +142,15 @@ export function Reports() {
       setAccounts(getStoredAccounts());
     };
     window.addEventListener('accounts-updated', handleAccountsUpdate);
-    return () => window.removeEventListener('accounts-updated', handleAccountsUpdate);
+    window.addEventListener('ledger-updated', handleAccountsUpdate);
+    window.addEventListener('invoices-updated', handleAccountsUpdate);
+    window.addEventListener('costs-updated', handleAccountsUpdate);
+    return () => {
+      window.removeEventListener('accounts-updated', handleAccountsUpdate);
+      window.removeEventListener('ledger-updated', handleAccountsUpdate);
+      window.removeEventListener('invoices-updated', handleAccountsUpdate);
+      window.removeEventListener('costs-updated', handleAccountsUpdate);
+    };
   }, []);
 
   // Create account state
@@ -496,7 +504,7 @@ export function Reports() {
 
   const formatRupiah = (num: number) => {
     if (num < 0) {
-      return '-Rp ' + Math.abs(num).toLocaleString('id-ID');
+      return '(Rp ' + Math.abs(num).toLocaleString('id-ID') + ')';
     }
     return 'Rp ' + num.toLocaleString('id-ID');
   };
@@ -833,7 +841,6 @@ export function Reports() {
                     {/* HARGA POKOK PENJUALAN */}
                     <div className="flex justify-between items-center text-[13px] font-bold pt-2 pb-2 border-b border-[#1C1C1C] text-white">
                       <span>II. HARGA POKOK PENJUALAN</span>
-                      <span className="text-white">({formatRupiah(cogs)})</span>
                     </div>
                     <div className="pl-4 space-y-1">
                       {((selectedData as any).cogsDetails && (selectedData as any).cogsDetails.length > 0) ? (
@@ -967,7 +974,7 @@ export function Reports() {
                             <div key={i} className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                               <span>{item.name}</span>
                               <span className={`font-medium ${item.amount < 0 ? 'text-[#EF4444]' : 'text-[#E5E5E5]'}`}>
-                                {item.amount < 0 ? `(${formatRupiah(Math.abs(item.amount))})` : formatRupiah(item.amount)}
+                                {formatRupiah(item.amount)}
                               </span>
                             </div>
                           ))}
@@ -1094,42 +1101,42 @@ export function Reports() {
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>(Kenaikan) / Penurunan Piutang Usaha</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {piutangChange > 0 ? `-${formatRupiah(piutangChange)}` : formatRupiah(Math.abs(piutangChange))}
+                              {formatRupiah(-piutangChange)}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>(Kenaikan) / Penurunan Persediaan Barang Dagang</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {persediaanChange > 0 ? `-${formatRupiah(persediaanChange)}` : formatRupiah(Math.abs(persediaanChange))}
+                              {formatRupiah(-persediaanChange)}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>(Kenaikan) / Penurunan Uang Muka Pembelian</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {prepaidChange > 0 ? `-${formatRupiah(prepaidChange)}` : formatRupiah(Math.abs(prepaidChange))}
+                              {formatRupiah(-prepaidChange)}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Kenaikan / (Penurunan) Utang Usaha</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {utangChange >= 0 ? formatRupiah(utangChange) : `-${formatRupiah(Math.abs(utangChange))}`}
+                              {formatRupiah(utangChange)}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Kenaikan / (Penurunan) Utang Pajak</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {utangPajakChange >= 0 ? formatRupiah(utangPajakChange) : `-${formatRupiah(Math.abs(utangPajakChange))}`}
+                              {formatRupiah(utangPajakChange)}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Kenaikan / (Penurunan) Utang Gaji</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {utangGajiChange >= 0 ? formatRupiah(utangGajiChange) : `-${formatRupiah(Math.abs(utangGajiChange))}`}
+                              {formatRupiah(utangGajiChange)}
                             </span>
                           </div>
                         </div>
@@ -1151,14 +1158,14 @@ export function Reports() {
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Perolehan Peralatan</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {peralatanChange > 0 ? `-${formatRupiah(peralatanChange)}` : 'Rp 0'}
+                              {peralatanChange > 0 ? formatRupiah(-peralatanChange) : 'Rp 0'}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Perolehan Kendaraan</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {kendaraanChange > 0 ? `-${formatRupiah(kendaraanChange)}` : 'Rp 0'}
+                              {kendaraanChange > 0 ? formatRupiah(-kendaraanChange) : 'Rp 0'}
                             </span>
                           </div>
                         </div>
@@ -1166,7 +1173,7 @@ export function Reports() {
                         <div className="flex justify-between items-center text-[12px] font-bold text-white bg-[#1C1C1C]/50 border border-[#2A2B2A] px-4 py-2.5 rounded-lg mt-3 shadow-sm">
                           <span className="text-white font-bold">Kas Bersih Digunakan untuk Aktivitas Investasi</span>
                           <span className="text-white font-extrabold">
-                            {cashFlowInvesting >= 0 ? formatRupiah(cashFlowInvesting) : `-${formatRupiah(Math.abs(cashFlowInvesting))}`}
+                            {formatRupiah(cashFlowInvesting)}
                           </span>
                         </div>
                       </div>
@@ -1182,21 +1189,21 @@ export function Reports() {
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Penerimaan / (Pembayaran) Utang Bank</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {bankChange >= 0 ? formatRupiah(bankChange) : `-${formatRupiah(Math.abs(bankChange))}`}
+                              {formatRupiah(bankChange)}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Penerimaan Setoran Modal Pemilik</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {modalChange >= 0 ? formatRupiah(modalChange) : `-${formatRupiah(Math.abs(modalChange))}`}
+                              {formatRupiah(modalChange)}
                             </span>
                           </div>
 
                           <div className="flex justify-between text-[11px] text-[#909090] py-1.5 hover:bg-[#1C1C1C]/15 rounded px-2 -mx-2 transition-colors">
                             <span>Penarikan Modal (Prive)</span>
                             <span className="text-[#E5E5E5] font-medium">
-                              {priveDividen === 0 ? 'Rp 0' : (priveDividen > 0 ? `-${formatRupiah(priveDividen)}` : formatRupiah(Math.abs(priveDividen)))}
+                              {priveDividen === 0 ? 'Rp 0' : formatRupiah(-priveDividen)}
                             </span>
                           </div>
                         </div>
@@ -1204,7 +1211,7 @@ export function Reports() {
                         <div className="flex justify-between items-center text-[12px] font-bold text-white bg-[#1C1C1C]/50 border border-[#2A2B2A] px-4 py-2.5 rounded-lg mt-3 shadow-sm">
                           <span className="text-white font-bold">Kas Bersih Digunakan dalam Aktivitas Pendanaan</span>
                           <span className="text-white font-extrabold">
-                            {cashFlowFinancing >= 0 ? formatRupiah(cashFlowFinancing) : `-${formatRupiah(Math.abs(cashFlowFinancing))}`}
+                            {formatRupiah(cashFlowFinancing)}
                           </span>
                         </div>
                       </div>
@@ -1216,7 +1223,7 @@ export function Reports() {
                         <div className="flex justify-between items-center text-[13px] font-extrabold bg-[#1C1C1C]/50 border border-[#2A2B2A] px-4 py-3 rounded-lg shadow-sm">
                           <span className="text-white font-bold">KENAIKAN / (PENURUNAN) BERSIH KAS DAN SETARA KAS</span>
                           <span className="text-white font-extrabold">
-                            {kasKenaikan >= 0 ? formatRupiah(kasKenaikan) : `-${formatRupiah(Math.abs(kasKenaikan))}`}
+                            {formatRupiah(kasKenaikan)}
                           </span>
                         </div>
 
