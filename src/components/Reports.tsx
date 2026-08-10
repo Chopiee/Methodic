@@ -261,6 +261,13 @@ export function Reports() {
   const [currentViewDate, setCurrentViewDate] = useState<Date>(initReportStart);
   const [selectedPreset, setSelectedPreset] = useState<string>('This month');
 
+  const handleTabChange = (tab: 'LabaRugi' | 'Neraca' | 'ArusKas') => {
+    setActiveReportTab(tab);
+    if (tab === 'Neraca') {
+      handlePresetClick('This year');
+    }
+  };
+
   const handleDayClick = (date: Date) => {
     setSelectedPreset(''); // clear preset
     if (!tempStart || (tempStart && tempEnd)) {
@@ -710,19 +717,35 @@ export function Reports() {
                 <div className="flex flex-1 min-h-[290px]">
                   {/* Sidebar presets */}
                   <div className="w-[120px] border-r border-[#1F1F21] p-2 flex flex-col gap-0.5 bg-[#0E0F11]">
-                    {['Today', 'Yesterday', 'This week', 'Last week', 'This month', 'Last month', 'This year', 'Last year', 'All time'].map((preset) => (
-                      <button
-                        key={preset}
-                        onClick={() => handlePresetClick(preset)}
-                        className={`w-full text-left text-[11px] px-2.5 py-1.5 rounded-md transition-colors ${
-                          selectedPreset === preset
-                            ? 'bg-[#E87A5D1A] text-[#E87A5D] font-medium'
-                            : 'text-[#909090] hover:bg-[#1E1E20] hover:text-white'
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    ))}
+                    {(activeReportTab === 'Neraca'
+                      ? ['This year', 'Last year']
+                      : ['Today', 'Yesterday', 'This week', 'Last week', 'This month', 'Last month', 'This year', 'Last year', 'All time']
+                    ).map((preset) => {
+                      let label = preset;
+                      if (preset === 'This year') label = 'Tahun ini';
+                      else if (preset === 'Last year') label = 'Tahun kemarin';
+                      else if (preset === 'Today') label = 'Hari ini';
+                      else if (preset === 'Yesterday') label = 'Kemarin';
+                      else if (preset === 'This week') label = 'Minggu ini';
+                      else if (preset === 'Last week') label = 'Minggu lalu';
+                      else if (preset === 'This month') label = 'Bulan ini';
+                      else if (preset === 'Last month') label = 'Bulan lalu';
+                      else if (preset === 'All time') label = 'Semua waktu';
+
+                      return (
+                        <button
+                          key={preset}
+                          onClick={() => handlePresetClick(preset)}
+                          className={`w-full text-left text-[11px] px-2.5 py-1.5 rounded-md transition-colors ${
+                            selectedPreset === preset
+                              ? 'bg-[#E87A5D1A] text-[#E87A5D] font-medium'
+                              : 'text-[#909090] hover:bg-[#1E1E20] hover:text-white'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {/* Calendars side-by-side */}
@@ -786,7 +809,7 @@ export function Reports() {
       {/* Report Switcher Tabs */}
       <div className="flex border-b border-[#1C1C1C] bg-[#0E0E0E]/40 px-8">
         <button
-          onClick={() => setActiveReportTab('LabaRugi')}
+          onClick={() => handleTabChange('LabaRugi')}
           className={`py-3.5 px-4 text-[13px] font-medium border-b-2 transition-all flex items-center gap-2 ${
             activeReportTab === 'LabaRugi'
               ? 'border-[#EA580C] text-[#EA580C]'
@@ -797,7 +820,7 @@ export function Reports() {
           Laba Rugi (Profit & Loss)
         </button>
         <button
-          onClick={() => setActiveReportTab('Neraca')}
+          onClick={() => handleTabChange('Neraca')}
           className={`py-3.5 px-4 text-[13px] font-medium border-b-2 transition-all flex items-center gap-2 ${
             activeReportTab === 'Neraca'
               ? 'border-[#EA580C] text-[#EA580C]'
@@ -808,7 +831,7 @@ export function Reports() {
           Neraca (Balance Sheet)
         </button>
         <button
-          onClick={() => setActiveReportTab('ArusKas')}
+          onClick={() => handleTabChange('ArusKas')}
           className={`py-3.5 px-4 text-[13px] font-medium border-b-2 transition-all flex items-center gap-2 ${
             activeReportTab === 'ArusKas'
               ? 'border-[#EA580C] text-[#EA580C]'

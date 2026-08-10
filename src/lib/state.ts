@@ -1611,6 +1611,51 @@ export const syncCostLedger = (cost: CostItem) => {
   saveLedger(filteredLedger);
 };
 
+export const isLabaRugiAccount = (a: AccountItem): boolean => {
+  if (a.isHeader) return true;
+  const code = a.code || '';
+  const cat = (a.category || '').toLowerCase();
+  const sub = (a.subCategory || '').toLowerCase();
+  const name = (a.name || '').toLowerCase();
+
+  // Accounts with code starting with 4, 5, or 6 are Income Statement (Laba Rugi)
+  if (code.startsWith('4') || code.startsWith('5') || code.startsWith('6')) return true;
+
+  // Categories belonging to Income Statement
+  if (
+    cat.includes('pendapatan') ||
+    cat.includes('hpp') ||
+    cat.includes('beban') ||
+    cat.includes('revenue') ||
+    cat.includes('cogs') ||
+    cat.includes('expense') ||
+    cat.includes('income')
+  ) {
+    return true;
+  }
+
+  // Subcategories belonging to Income Statement
+  if (
+    sub.includes('cogs') ||
+    sub.includes('expense') ||
+    sub.includes('income') ||
+    sub.includes('revenue')
+  ) {
+    return true;
+  }
+
+  // Account names that are Laba Rugi items (retur, potongan, diskon)
+  if (
+    name.includes('retur') ||
+    name.includes('potongan') ||
+    name.includes('diskon')
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 /**
  * Dynamic calculation of full 2026 Financial Reports based on actual transactions in localStorage.
  * Integrates:
@@ -1642,7 +1687,7 @@ export const getDynamicFinancials = (selectedYear: '2026' | '2025', startDate?: 
 
   // Revenue Accounts (4xxx or Pendapatan except 4200/Other Income)
   const revenueAccounts = accounts.filter(
-    a => (a.category === 'Pendapatan' || a.code.startsWith('4')) &&
+    a => (a.category === 'Pendapatan' || a.code.startsWith('4') || a.name.toLowerCase().includes('retur penjualan')) &&
          (a.code !== '4200' && a.category !== 'Pendapatan Lainnya' && a.subCategory !== 'Other Income') &&
          !a.isHeader
   );
@@ -1665,7 +1710,7 @@ export const getDynamicFinancials = (selectedYear: '2026' | '2025', startDate?: 
 
   // COGS / HPP Accounts (5xxx or HPP or Beban Pokok Penjualan)
   const cogsAccounts = accounts.filter(
-    a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.code.startsWith('5')) &&
+    a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.code.startsWith('5') || a.name.toLowerCase().includes('retur pembelian')) &&
          !a.isHeader
   );
   const dynamicCOGS = cogsAccounts.reduce((sum, a) => {
@@ -1695,22 +1740,22 @@ export const getDynamicFinancials = (selectedYear: '2026' | '2025', startDate?: 
     otherIncomeDetails,
     assets: {
       lancar: accounts
-        .filter(a => (a.category === 'Aset' || a.code.startsWith('1')) && !a.isHeader && (a.code < '1500' && a.subCategory !== 'Fixed Asset' && a.subCategory !== 'Contra Asset'))
+        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Aset' || a.code.startsWith('1')) && (a.code < '1500' && a.subCategory !== 'Fixed Asset' && a.subCategory !== 'Contra Asset'))
         .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance })),
       tetap: accounts
-        .filter(a => (a.category === 'Aset' || a.code.startsWith('1')) && !a.isHeader && (a.code >= '1500' || a.subCategory === 'Fixed Asset' || a.subCategory === 'Contra Asset'))
+        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Aset' || a.code.startsWith('1')) && (a.code >= '1500' || a.subCategory === 'Fixed Asset' || a.subCategory === 'Contra Asset'))
         .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
     },
     liabilities: {
       pendek: accounts
-        .filter(a => (a.category === 'Liabilitas' || a.code.startsWith('2')) && !a.isHeader && (a.code < '2500' && a.subCategory !== 'Long-term Liability' && a.subCategory !== 'Long Term Liability'))
+        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Liabilitas' || a.code.startsWith('2')) && (a.code < '2500' && a.subCategory !== 'Long-term Liability' && a.subCategory !== 'Long Term Liability'))
         .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance })),
       panjang: accounts
-        .filter(a => (a.category === 'Liabilitas' || a.code.startsWith('2')) && !a.isHeader && (a.code >= '2500' || a.subCategory === 'Long-term Liability' || a.subCategory === 'Long Term Liability'))
+        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Liabilitas' || a.code.startsWith('2')) && (a.code >= '2500' || a.subCategory === 'Long-term Liability' || a.subCategory === 'Long Term Liability'))
         .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
     },
     equity: accounts
-      .filter(a => (a.category === 'Ekuitas' || a.code.startsWith('3')) && !a.isHeader)
+      .filter(a => !isLabaRugiAccount(a) && (a.category === 'Ekuitas' || a.code.startsWith('3')))
       .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
   };
 };
