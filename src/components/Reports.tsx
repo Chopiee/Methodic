@@ -288,50 +288,62 @@ export function Reports() {
 
   const handlePresetClick = (preset: string) => {
     setSelectedPreset(preset);
-    const today = new Date(2026, 6, 8); // Mocking Today as July 8, 2026 to fit context
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     let start = new Date(today);
     let end = new Date(today);
 
     switch (preset) {
       case 'Today':
-        start = new Date(2026, 6, 8);
-        end = new Date(2026, 6, 8);
+        start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
         break;
-      case 'Yesterday':
-        start = new Date(2026, 6, 7);
-        end = new Date(2026, 6, 7);
+      case 'Yesterday': {
+        const y = new Date(today);
+        y.setDate(today.getDate() - 1);
+        start = new Date(y.getFullYear(), y.getMonth(), y.getDate());
+        end = new Date(y.getFullYear(), y.getMonth(), y.getDate());
         break;
-      case 'This week':
-        start = new Date(2026, 6, 6);
-        end = new Date(2026, 6, 12);
+      }
+      case 'This week': {
+        const day = today.getDay();
+        const diffToMon = today.getDate() - day + (day === 0 ? -6 : 1);
+        start = new Date(today.getFullYear(), today.getMonth(), diffToMon);
+        end = new Date(today.getFullYear(), today.getMonth(), diffToMon + 6);
         break;
-      case 'Last week':
-        start = new Date(2026, 5, 29);
-        end = new Date(2026, 6, 5);
+      }
+      case 'Last week': {
+        const day = today.getDay();
+        const diffToMon = today.getDate() - day + (day === 0 ? -6 : 1) - 7;
+        start = new Date(today.getFullYear(), today.getMonth(), diffToMon);
+        end = new Date(today.getFullYear(), today.getMonth(), diffToMon + 6);
         break;
+      }
       case 'This month':
-        start = new Date(2026, 6, 1);
-        end = new Date(2026, 6, 31);
+        start = new Date(today.getFullYear(), today.getMonth(), 1);
+        end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
         break;
       case 'Last month':
-        start = new Date(2026, 5, 1);
-        end = new Date(2026, 5, 30);
+        start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        end = new Date(today.getFullYear(), today.getMonth(), 0);
         break;
       case 'This year':
-        start = new Date(2026, 0, 1);
-        end = new Date(2026, 11, 31);
+        start = new Date(today.getFullYear(), 0, 1);
+        end = new Date(today.getFullYear(), 11, 31);
         break;
       case 'Last year':
-        start = new Date(2025, 6, 7);
-        end = new Date(2026, 6, 7);
+        start = new Date(today.getFullYear() - 1, 0, 1);
+        end = new Date(today.getFullYear() - 1, 11, 31);
         break;
       case 'All time':
-        start = new Date(2024, 0, 1);
-        end = new Date(2026, 6, 8);
+        start = new Date(2020, 0, 1);
+        end = new Date(today.getFullYear() + 5, 11, 31);
         break;
     }
     setTempStart(start);
     setTempEnd(end);
+    setRangeStart(start);
+    setRangeEnd(end);
     
     // Adjust current view date to match the range start month
     setCurrentViewDate(new Date(start.getFullYear(), start.getMonth(), 1));
@@ -409,7 +421,8 @@ export function Reports() {
               btnClass += " text-[#4A4A4D] hover:text-[#777] cursor-pointer";
             }
 
-            const isToday = cell.date.getFullYear() === 2026 && cell.date.getMonth() === 6 && cell.date.getDate() === 8;
+            const realNow = new Date();
+            const isToday = cell.date.getFullYear() === realNow.getFullYear() && cell.date.getMonth() === realNow.getMonth() && cell.date.getDate() === realNow.getDate();
 
             return (
               <div key={idx} className={wrapperClass}>

@@ -379,25 +379,95 @@ export const saveIdPrefixSettings = (settings: IdPrefixSettings): void => {
   setStorageItem<IdPrefixSettings>('methodic_id_prefix_settings_v2', settings);
 };
 
-export const parseAnyDate = (str?: string): Date | null => {
-  if (!str) return null;
-  const s = String(str).trim();
+export const parseAnyDate = (val?: string | Date | null): Date | null => {
+  if (!val) return null;
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val;
+  }
+  const s = String(val).trim();
+  if (!s) return null;
+
+  // 1. Check YYYY-MM-DD or DD-MM-YYYY format with dashes
   if (s.includes('-')) {
-    const parts = s.split('-').map(Number);
-    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-      if (parts[0] > 1000) return new Date(parts[0], parts[1] - 1, parts[2]);
-      if (parts[2] > 1000) return new Date(parts[2], parts[1] - 1, parts[0]);
+    const parts = s.split('-').map(p => p.trim()).filter(Boolean);
+    if (parts.length === 3) {
+      const p0 = Number(parts[0]);
+      const p1 = Number(parts[1]);
+      const p2 = Number(parts[2]);
+      if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+        if (p0 > 1000) return new Date(p0, p1 - 1, p2);
+        if (p2 > 1000) return new Date(p2, p1 - 1, p0);
+      }
     }
   }
+
+  // 2. Check MM/DD/YYYY or DD/MM/YYYY format with slashes
   if (s.includes('/')) {
-    const parts = s.split('/').map(Number);
-    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-      if (parts[2] > 1000) return new Date(parts[2], parts[1] - 1, parts[0]);
-      if (parts[0] > 1000) return new Date(parts[0], parts[1] - 1, parts[2]);
+    const parts = s.split('/').map(p => p.trim()).filter(Boolean);
+    if (parts.length === 3) {
+      const p0 = Number(parts[0]);
+      const p1 = Number(parts[1]);
+      const p2 = Number(parts[2]);
+      if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+        if (p2 > 1000) {
+          if (p0 > 12) return new Date(p2, p1 - 1, p0); // DD/MM/YYYY
+          if (p1 > 12) return new Date(p2, p0 - 1, p1); // MM/DD/YYYY
+          return new Date(p2, p0 - 1, p1); // MM/DD/YYYY default for InvoiceItem
+        }
+        if (p0 > 1000) {
+          return new Date(p0, p1 - 1, p2);
+        }
+      }
     }
   }
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+
+  // 3. Try standard JS Date parsing
+  const stdDate = new Date(s);
+  if (!isNaN(stdDate.getTime())) {
+    return stdDate;
+  }
+
+  // 4. Parse Indonesian and English text date strings (e.g. "9 Agustus 2026", "14 Juli 2026", "08 Agu 2026")
+  const monthMap: Record<string, number> = {
+    januari: 0, jan: 0,
+    februari: 1, feb: 1,
+    maret: 2, mar: 2,
+    april: 3, apr: 3,
+    mei: 4, may: 4,
+    juni: 5, jun: 5,
+    juli: 6, jul: 6,
+    agustus: 7, agu: 7, ags: 7, aug: 7, august: 7,
+    september: 8, sep: 8,
+    oktober: 9, okt: 9, oct: 9, october: 9,
+    november: 10, nov: 10,
+    desember: 11, des: 11, dec: 11, december: 11
+  };
+
+  const cleanStr = s.replace(/,/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  const tokens = cleanStr.split(' ');
+
+  let foundDay: number | null = null;
+  let foundMonth: number | null = null;
+  let foundYear: number | null = null;
+
+  for (const token of tokens) {
+    const num = Number(token);
+    if (!isNaN(num)) {
+      if (num > 1000) {
+        foundYear = num;
+      } else if (num >= 1 && num <= 31 && foundDay === null) {
+        foundDay = num;
+      }
+    } else if (monthMap[token] !== undefined) {
+      foundMonth = monthMap[token];
+    }
+  }
+
+  if (foundYear !== null && foundMonth !== null && foundDay !== null) {
+    return new Date(foundYear, foundMonth, foundDay);
+  }
+
+  return null;
 };
 
 export const getNextId = (items: { id: string }[], prefix: string): string => {
