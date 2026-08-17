@@ -1014,7 +1014,7 @@ export function Accounting() {
 
   const labaKotor = totalPendapatan - totalHPP;
   const labaOperasional = labaKotor - totalBebanOperasional;
-  const labaBersih = (labaKotor - labaOperasional) + totalPendapatanLainnya;
+  const labaBersih = labaKotor - totalBebanOperasional + totalPendapatanLainnya;
 
   return (
     <div className="flex-1 flex flex-col font-sans text-white bg-[#0A0A0A] min-h-screen">
@@ -2192,7 +2192,6 @@ export function Accounting() {
               <div className="space-y-2 pt-2 border-t border-[#2A2A2A]/40">
                 <div className="flex justify-between font-bold text-[#E87A5D] uppercase tracking-wider text-[11px]">
                   <span>III. Beban Operasional</span>
-                  <span>(Rp {totalBebanOperasional.toLocaleString('id-ID')})</span>
                 </div>
                 {accounts.filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.parent === '6000') && !a.isHeader).map(acc => (
                   <div key={acc.code} className="pl-4 flex justify-between text-[#D5D5D5]">
@@ -2202,11 +2201,11 @@ export function Accounting() {
                 ))}
               </div>
 
-              {/* Operating Profit */}
+              {/* Total Operating Expenses */}
               <div className="p-3 bg-[#0A0A0A] rounded-xl border border-[#2A2A2A] flex justify-between font-bold text-sm text-white">
-                <span>LABA OPERASIONAL (EBITDA)</span>
-                <span className={labaOperasional >= 0 ? 'text-white' : 'text-[#EF4444]'}>
-                  Rp {labaOperasional.toLocaleString('id-ID')}
+                <span>TOTAL BEBAN OPERASIONAL</span>
+                <span className="text-white">
+                  Rp {totalBebanOperasional.toLocaleString('id-ID')}
                 </span>
               </div>
 

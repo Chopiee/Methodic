@@ -489,7 +489,7 @@ export function Reports() {
   const totalOperatingExpenses = (selectedData.operatingExpenses as FinancialReportItem[]).reduce((sum, item) => sum + item.amount, 0);
   const operatingProfit = grossProfit - totalOperatingExpenses;
   const otherIncome = selectedData.otherIncome;
-  const netProfitBeforeTax = (grossProfit - operatingProfit) + otherIncome;
+  const netProfitBeforeTax = grossProfit - totalOperatingExpenses + otherIncome;
 
   // Indonesian Corporate Tax Calculation:
   // - Scheme 1: Final MSME (PPh Final PP 55 / PP 23) -> 0.5% of Gross Revenue (peredaran bruto)
@@ -910,7 +910,6 @@ export function Reports() {
                     {/* Operating Expenses */}
                     <div className="flex justify-between items-center text-[13px] font-bold pt-2 pb-2 border-b border-[#1C1C1C] text-white">
                       <span>III. BEBAN OPERASIONAL (OPERATING EXPENSES)</span>
-                      <span className="text-white">({formatRupiah(totalOperatingExpenses)})</span>
                     </div>
                     <div className="pl-4 space-y-1">
                       {selectedData.operatingExpenses.map((expense, idx) => (
@@ -921,10 +920,10 @@ export function Reports() {
                       ))}
                     </div>
 
-                    {/* Operating Profit */}
+                    {/* Total Operating Expenses */}
                     <div className="flex justify-between items-center text-[13px] font-bold bg-[#1C1C1C]/50 border border-[#2A2B2A] px-4 py-3 rounded-lg my-2 shadow-sm">
-                      <span className="text-white">LABA OPERASIONAL (EBITDA)</span>
-                      <span className="text-white font-bold">{formatRupiah(operatingProfit)}</span>
+                      <span className="text-white">TOTAL BEBAN OPERASIONAL</span>
+                      <span className="text-white font-bold">{formatRupiah(totalOperatingExpenses)}</span>
                     </div>
 
                     {/* Other Income / Expense */}
