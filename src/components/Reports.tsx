@@ -489,7 +489,7 @@ export function Reports() {
   const totalOperatingExpenses = (selectedData.operatingExpenses as FinancialReportItem[]).reduce((sum, item) => sum + item.amount, 0);
   const operatingProfit = grossProfit - totalOperatingExpenses;
   const otherIncome = selectedData.otherIncome;
-  const netProfitBeforeTax = operatingProfit + otherIncome;
+  const netProfitBeforeTax = (grossProfit - operatingProfit) + otherIncome;
 
   // Indonesian Corporate Tax Calculation:
   // - Scheme 1: Final MSME (PPh Final PP 55 / PP 23) -> 0.5% of Gross Revenue (peredaran bruto)

@@ -1014,7 +1014,7 @@ export function Accounting() {
 
   const labaKotor = totalPendapatan - totalHPP;
   const labaOperasional = labaKotor - totalBebanOperasional;
-  const labaBersih = labaOperasional + totalPendapatanLainnya;
+  const labaBersih = (labaKotor - labaOperasional) + totalPendapatanLainnya;
 
   return (
     <div className="flex-1 flex flex-col font-sans text-white bg-[#0A0A0A] min-h-screen">
