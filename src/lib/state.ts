@@ -1740,24 +1740,24 @@ export const getDynamicFinancials = (selectedYear: '2026' | '2025', startDate?: 
     otherIncomeDetails,
     assets: {
       lancar: accounts
-        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Aset' || a.code.startsWith('1')) && (a.code < '1500' && a.subCategory !== 'Fixed Asset' && a.subCategory !== 'Contra Asset'))
+        .filter(a => !a.isHeader && !isLabaRugiAccount(a) && (a.category === 'Aset' || a.code.startsWith('1')) && (a.code < '1500' && a.subCategory !== 'Fixed Asset' && a.subCategory !== 'Contra Asset'))
         .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance })),
       tetap: accounts
-        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Aset' || a.code.startsWith('1')) && (a.code >= '1500' || a.subCategory === 'Fixed Asset' || a.subCategory === 'Contra Asset'))
-        .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
+        .filter(a => !a.isHeader && !isLabaRugiAccount(a) && (a.category === 'Aset' || a.code.startsWith('1')) && (a.code >= '1500' || a.subCategory === 'Fixed Asset' || a.subCategory === 'Contra Asset'))
+        .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.code === '1530' ? -Math.abs(a.balance) : a.balance }))
     },
     liabilities: {
       pendek: accounts
-        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Liabilitas' || a.code.startsWith('2')) && (a.code < '2500' && a.subCategory !== 'Long-term Liability' && a.subCategory !== 'Long Term Liability'))
+        .filter(a => !a.isHeader && !isLabaRugiAccount(a) && (a.category === 'Liabilitas' || a.code.startsWith('2')) && (a.code < '2500' && a.subCategory !== 'Long-term Liability' && a.subCategory !== 'Long Term Liability'))
         .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance })),
       panjang: accounts
-        .filter(a => !isLabaRugiAccount(a) && (a.category === 'Liabilitas' || a.code.startsWith('2')) && (a.code >= '2500' || a.subCategory === 'Long-term Liability' || a.subCategory === 'Long Term Liability'))
+        .filter(a => !a.isHeader && !isLabaRugiAccount(a) && (a.category === 'Liabilitas' || a.code.startsWith('2')) && (a.code >= '2500' || a.subCategory === 'Long-term Liability' || a.subCategory === 'Long Term Liability'))
         .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
     },
     equity: accounts
-      .filter(a => !isLabaRugiAccount(a) && (a.category === 'Ekuitas' || a.code.startsWith('3')))
+      .filter(a => !a.isHeader && !isLabaRugiAccount(a) && (a.category === 'Ekuitas' || a.code.startsWith('3')))
       .map(a => ({ name: `${a.code} - ${a.name}`, amount: a.balance }))
-  };
+    };
 };
 
 export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date): AccountItem[] => {
@@ -1869,19 +1869,34 @@ export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date)
   const findAccountCode = (str?: string): string | null => {
     if (!str) return null;
     const cleanStr = String(str).trim();
-    // Try code match e.g. "6100", "6200", "1135" or "6200 - Beban Konsumsi"
+    if (!cleanStr) return null;
+
+    // 1. Try code match e.g. "6100", "6200", "1135" or "6200 - Beban Konsumsi"
     const codeMatch = cleanStr.match(/^(\d{4})/);
     if (codeMatch && masterList.some(m => m.code === codeMatch[1])) {
       return codeMatch[1];
     }
-    // Match exact code
+    // 2. Match exact code
     const exactCode = masterList.find(m => m.code.toLowerCase() === cleanStr.toLowerCase());
     if (exactCode) return exactCode.code;
-    // Match exact name
+
+    // 3. Match exact name
     const exactName = masterList.find(m => m.name.toLowerCase() === cleanStr.toLowerCase());
     if (exactName) return exactName.code;
-    // Match string containing name or code
-    const substringMatch = masterList.find(m => cleanStr.toLowerCase().includes(m.name.toLowerCase()) || cleanStr.toLowerCase().includes(m.code.toLowerCase()));
+
+    // 4. Match common bank/cash aliases
+    const lower = cleanStr.toLowerCase();
+    if (lower === 'bca' || lower.includes('bca')) return '1130';
+    if (lower === 'mandiri' || lower.includes('mandiri')) return '1140';
+    if (lower === 'kas kecil' || lower.includes('petty')) return '1110';
+    if (lower === 'kas' || lower === 'cash' || lower.includes('toko')) return '1120';
+
+    // 5. Match bidirectional substring
+    const substringMatch = masterList.find(m => {
+      const lowerName = m.name.toLowerCase();
+      const lowerCode = m.code.toLowerCase();
+      return lower.includes(lowerName) || lowerName.includes(lower) || lower.includes(lowerCode) || lowerCode.includes(lower);
+    });
     if (substringMatch) return substringMatch.code;
 
     return null;
@@ -1986,11 +2001,29 @@ export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date)
   // 3. Process Manual Journal Entries
   const validLedger = ledger.filter(entry => {
     if (entry.status === 'Draft') return false;
-    if (entry.id.startsWith('JV-2026-INV-') || entry.id.startsWith('JV-2026-SLS-') || entry.id.startsWith('JV-2026-PUR-') || entry.id.startsWith('JV-2026-PAY-') || entry.id.startsWith('JV-2026-CST-')) {
+    if (
+      entry.id.startsWith('JV-2026-INV-') || 
+      entry.id.startsWith('JV-2026-SLS-') || 
+      entry.id.startsWith('JV-2026-PUR-') || 
+      entry.id.startsWith('JV-2026-PAY-') || 
+      entry.id.startsWith('JV-2026-CST-') ||
+      entry.id.startsWith('JV-INV-') ||
+      entry.id.startsWith('JV-PAY-') ||
+      entry.id.startsWith('JV-CST-')
+    ) {
       return false;
     }
-    const desc = entry.description || '';
-    if (desc.includes('Sales Invoice') || desc.includes('Purchase Invoice') || desc.startsWith('Pelunasan:') || desc.startsWith('Pembayaran:') || desc.startsWith('Biaya:') || desc.startsWith('Pengeluaran Biaya')) {
+    const desc = (entry.description || '').toLowerCase();
+    if (
+      desc.includes('sales invoice') || 
+      desc.includes('purchase invoice') || 
+      desc.includes('faktur penjualan') ||
+      desc.includes('faktur pembelian') ||
+      desc.startsWith('pelunasan:') || 
+      desc.startsWith('pembayaran:') || 
+      desc.startsWith('biaya:') || 
+      desc.startsWith('pengeluaran biaya')
+    ) {
       return false;
     }
     return true;
@@ -2044,7 +2077,9 @@ export const getAccountsWithDynamicBalances = (startDate?: Date, endDate?: Date)
   };
 
   // Header Account Calculations
-  const kasDanSetaraKasTotal = sumChildren('1100') || (masterList.find(a => a.code === '1110')?.balance || 0) + (masterList.find(a => a.code === '1120')?.balance || 0) + (masterList.find(a => a.code === '1130')?.balance || 0) + (masterList.find(a => a.code === '1140')?.balance || 0);
+  const kasDanSetaraKasTotal = masterList
+    .filter(a => (a.parent === '1100' || (a.code.startsWith('11') && a.code !== '1100')) && !a.isHeader)
+    .reduce((sum, a) => sum + (a.balance || 0), 0);
   const h1100 = masterList.find(a => a.code === '1100');
   if (h1100) h1100.balance = kasDanSetaraKasTotal;
 

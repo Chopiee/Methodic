@@ -1001,20 +1001,30 @@ export function Accounting() {
   const totalEkuitas = accounts.find(a => a.code === '3000')?.balance || (getBal('3100') - getBal('3200') + getBal('3300') + getBal('3400'));
   const totalPendapatan = accounts
     .filter(a => (a.category === 'Pendapatan' || a.parent === '4000') && !a.isHeader && a.code !== '4200')
-    .reduce((sum, a) => sum + a.balance, 0) || getBal('4100');
+    .reduce((sum, a) => {
+      const isContra = a.normalBal === 'Debit' || a.name.toLowerCase().includes('retur') || a.name.toLowerCase().includes('potongan');
+      return sum + (isContra ? -Math.abs(a.balance) : a.balance);
+    }, 0) || getBal('4100');
   const totalPendapatanLainnya = accounts
-    .filter(a => (a.code === '4200' || a.category === 'Pendapatan Lainnya'))
+    .filter(a => (a.code === '4200' || a.category === 'Pendapatan Lainnya') && !a.isHeader)
     .reduce((sum, a) => sum + a.balance, 0) || getBal('4200');
   const totalHPP = accounts
     .filter(a => (a.category === 'HPP' || a.category === 'Beban Pokok Penjualan' || a.parent === '5000') && !a.isHeader)
-    .reduce((sum, a) => sum + a.balance, 0) || getBal('5100');
+    .reduce((sum, a) => {
+      const isContra = a.normalBal === 'Kredit' || a.name.toLowerCase().includes('retur') || a.name.toLowerCase().includes('potongan');
+      return sum + (isContra ? -Math.abs(a.balance) : a.balance);
+    }, 0) || getBal('5100');
   const totalBebanOperasional = accounts
-    .filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.subCategory === 'Operating Expense' || a.parent === '6000') && !a.isHeader)
+    .filter(a => (a.category === 'Beban' || a.category === 'Beban Operational' || a.category === 'Beban Operasional' || a.subCategory === 'Operating Expense' || a.parent === '6000') && !a.isHeader)
     .reduce((sum, a) => sum + a.balance, 0);
 
   const labaKotor = totalPendapatan - totalHPP;
-  const labaOperasional = labaKotor - totalBebanOperasional;
+  const labaOperasional = totalBebanOperasional;
   const labaBersih = labaKotor - totalBebanOperasional + totalPendapatanLainnya;
+
+  const initialCashBankLedger = ledger.filter(l => (l.id.startsWith('JV-2026-INIT-11') || l.account.startsWith('11')) && l.id.includes('INIT') && typeof l.debit === 'number');
+  const saldoKasAwal = initialCashBankLedger.reduce((sum, l) => sum + (typeof l.debit === 'number' ? l.debit : 0), 0);
+  const kasKenaikanOperasional = totalKasBank - saldoKasAwal;
 
   return (
     <div className="flex-1 flex flex-col font-sans text-white bg-[#0A0A0A] min-h-screen">
@@ -2411,7 +2421,13 @@ export function Accounting() {
                 </span>
                 <div className="flex justify-between text-[#D5D5D5]">
                   <span>Saldo Kas & Bank Awal</span>
-                  <span>Rp {(totalKasBank - labaBersih).toLocaleString('id-ID')}</span>
+                  <span>Rp {saldoKasAwal.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between text-[#D5D5D5]">
+                  <span>Kenaikan / (Penurunan) Kas Bersih</span>
+                  <span className={kasKenaikanOperasional >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                    Rp {kasKenaikanOperasional.toLocaleString('id-ID')}
+                  </span>
                 </div>
                 <div className="flex justify-between font-bold text-white pt-2 border-t border-[#2A2A2A]/40">
                   <span>Total Kas & Bank Akhir</span>
